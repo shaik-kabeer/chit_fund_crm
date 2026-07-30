@@ -1,0 +1,731 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================
+// ORGANIZATION & STAFF
+// ==============================
+
+model Organization {
+  id             String   @id @default(uuid())
+  name           String
+  registrationNo String?  @map("registration_no")
+  gstin          String?
+  pan            String?
+  address        String?
+  city           String?
+  state          String?
+  pincode        String?
+  phone          String?
+  email          String?
+  logoUrl        String?  @map("logo_url")
+  // Where members send online payments
+  paymentUpiId   String?  @map("payment_upi_id")
+  paymentPhone   String?  @map("payment_phone")
+  paymentQrUrl   String?  @map("payment_qr_url")
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  branches  Branch[]
+  staff     Staff[]
+  customers Customer[]
+  products  Product[]
+  groups    ChitGroup[]
+  auditLogs AuditLog[]
+
+  @@map("organizations")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  name      String
+  code      String
+  address   String?
+  city      String?
+  state     String?
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org       Organization @relation(fields: [orgId], references: [id])
+  staff     Staff[]
+  customers Customer[]
+  groups    ChitGroup[]
+
+  @@unique([orgId, code])
+  @@map("branches")
+}
+
+enum StaffRole {
+  SUPER_ADMIN
+  BRANCH_ADMIN
+  ACCOUNTANT
+  COLLECTOR
+  VIEWER
+}
+
+model Staff {
+  id           String    @id @default(uuid())
+  orgId        String    @map("org_id")
+  branchId     String?   @map("branch_id")
+  email        String    @unique
+  phone        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         StaffRole @default(VIEWER)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  tokenVersion Int       @default(0) @map("token_version")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  org    Organization @relation(fields: [orgId], references: [id])
+  branch Branch?      @relation(fields: [branchId], references: [id])
+
+  // Relations for audit
+  verifiedPayments   Payment[]        @relation("PaymentVerifiedBy")
+  collectedPayments  Payment[]        @relation("PaymentCollectedBy")
+  approvedMembers    GroupMember[]    @relation("MemberApprovedBy")
+  conductedAuctions  Auction[]        @relation("AuctionConductedBy")
+  approvedPayouts    Payout[]         @relation("PayoutApprovedBy")
+  verifiedDocuments  Document[]       @relation("DocumentVerifiedBy")
+  waivedPenalties    PenaltyApplied[] @relation("PenaltyWaivedBy")
+  kycVerifications   Customer[]       @relation("KycVerifiedBy")
+  createdCustomers   Customer[]       @relation("CustomerCreatedBy")
+  verifiedGuarantors Guarantor[]      @relation("GuarantorVerifiedBy")
+
+  @@index([orgId, role])
+  @@map("staff")
+}
+
+// ==============================
+// CUSTOMERS
+// ==============================
+
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  VERIFIED
+  REJECTED
+}
+
+model Customer {
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  branchId           String?   @map("branch_id")
+  // Login
+  phone              String
+  email              String?
+  passwordHash       String    @map("password_hash")
+  // Identity
+  name               String
+  fatherName         String?   @map("father_name")
+  dateOfBirth        DateTime? @map("date_of_birth") @db.Date
+  pan                String?
+  aadhaarLast4       String?   @map("aadhaar_last4")
+  // Address
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  // KYC
+  kycStatus          KycStatus @default(PENDING) @map("kyc_status")
+  kycSubmittedAt     DateTime? @map("kyc_submitted_at")
+  kycVerifiedAt      DateTime? @map("kyc_verified_at")
+  kycVerifiedBy      String?   @map("kyc_verified_by")
+  kycRejectionReason String?   @map("kyc_rejection_reason")
+  // Bank (for payouts)
+  bankName           String?   @map("bank_name")
+  bankAccountNo      String?   @map("bank_account_no")
+  bankIfsc           String?   @map("bank_ifsc")
+  bankBranch         String?   @map("bank_branch")
+  upiId              String?   @map("upi_id")
+  // Meta
+  photoUrl           String?   @map("photo_url")
+  isActive           Boolean   @default(true) @map("is_active")
+  tokenVersion       Int       @default(0) @map("token_version")
+  createdById        String?   @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  org         Organization @relation(fields: [orgId], references: [id])
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  kycVerifier Staff?       @relation("KycVerifiedBy", fields: [kycVerifiedBy], references: [id])
+  createdBy   Staff?       @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+
+  memberships        GroupMember[]
+  guarantorsProvided Guarantor[]    @relation("GuarantorCustomer")
+  documents          Document[]     @relation("CustomerDocuments")
+  notifications      Notification[]
+
+  @@unique([orgId, phone])
+  @@index([orgId, kycStatus])
+  @@index([orgId, name])
+  @@map("customers")
+}
+
+// ==============================
+// PRODUCTS (Scheme Templates)
+// ==============================
+
+model Product {
+  id                     String   @id @default(uuid())
+  orgId                  String   @map("org_id")
+  name                   String
+  description            String?
+  chitValuePaise         BigInt   @map("chit_value_paise")
+  memberCount            Int      @map("member_count")
+  tenureMonths           Int      @map("tenure_months")
+  baseInstallmentPaise   BigInt   @map("base_installment_paise") // monthly EMI for non-lifted
+  liftedInstallmentPaise BigInt   @map("lifted_installment_paise") // monthly EMI after lifting (can be same)
+  payoutAmountPaise      BigInt   @map("payout_amount_paise") // what member receives on lifting
+  // Auction settings (parked for future use)
+  auctionEnabled         Boolean  @default(false) @map("auction_enabled")
+  commissionPercent      Decimal  @default(5.00) @map("commission_percent") @db.Decimal(5, 2)
+  minBidPercent          Decimal  @default(0) @map("min_bid_percent") @db.Decimal(5, 2)
+  maxBidPercent          Decimal  @default(40) @map("max_bid_percent") @db.Decimal(5, 2)
+  isActive               Boolean  @default(true) @map("is_active")
+  createdBy              String?  @map("created_by")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  org            Organization            @relation(fields: [orgId], references: [id])
+  groups         ChitGroup[]
+  penaltyRules   PenaltyRule[]
+  payoutSchedule ProductPayoutSchedule[]
+
+  @@unique([orgId, name])
+  @@map("products")
+}
+
+// Monthly payout design for a product (admin-defined per month)
+model ProductPayoutSchedule {
+  id                String @id @default(uuid())
+  productId         String @map("product_id")
+  monthNumber       Int    @map("month_number")
+  payoutAmountPaise BigInt @map("payout_amount_paise")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, monthNumber])
+  @@index([productId])
+  @@map("product_payout_schedules")
+}
+
+// ==============================
+// CHIT GROUPS (Batches)
+// ==============================
+
+enum GroupStatus {
+  DRAFT
+  OPEN
+  ACTIVE
+  FROZEN
+  COMPLETED
+  TERMINATED
+}
+
+model ChitGroup {
+  id                  String      @id @default(uuid())
+  orgId               String      @map("org_id")
+  branchId            String?     @map("branch_id")
+  productId           String      @map("product_id")
+  groupNumber         String      @map("group_number")
+  agreementNo         String?     @map("agreement_no")
+  status              GroupStatus @default(DRAFT)
+  startDate           DateTime    @map("start_date") @db.Date
+  currentMonth        Int         @default(0) @map("current_month")
+  totalSeats          Int         @map("total_seats")
+  filledSeats         Int         @default(0) @map("filled_seats")
+  version             Int         @default(1)
+  totalCollectedPaise BigInt      @default(0) @map("total_collected_paise")
+  totalDisbursedPaise BigInt      @default(0) @map("total_disbursed_paise")
+  createdBy           String?     @map("created_by")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  org     Organization @relation(fields: [orgId], references: [id])
+  branch  Branch?      @relation(fields: [branchId], references: [id])
+  product Product      @relation(fields: [productId], references: [id])
+
+  members       GroupMember[]
+  auctions      Auction[]
+  installments  Installment[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([orgId, groupNumber])
+  @@index([orgId, status])
+  @@index([productId])
+  @@map("chit_groups")
+}
+
+// ==============================
+// GROUP MEMBERS (Tickets/Cards)
+// ==============================
+
+enum MemberStatus {
+  REQUESTED
+  APPROVED
+  ACTIVE
+  PRIZED
+  DEFAULTING
+  COMPLETED
+  REJECTED
+  WITHDRAWN
+}
+
+model GroupMember {
+  id                       String       @id @default(uuid())
+  groupId                  String       @map("group_id")
+  customerId               String       @map("customer_id")
+  ticketNumber             Int?         @map("ticket_number") // assigned on approval
+  seatLabel                String?      @map("seat_label") // e.g. "Self", "Wife", "Shop-1"
+  status                   MemberStatus @default(REQUESTED)
+  baseInstallmentPaise     BigInt       @map("base_installment_paise")
+  currentInstallmentPaise  BigInt       @map("current_installment_paise")
+  totalPaidPaise           BigInt       @default(0) @map("total_paid_paise")
+  totalDividendEarnedPaise BigInt       @default(0) @map("total_dividend_earned_paise")
+  arrearsPaise             BigInt       @default(0) @map("arrears_paise")
+  joinedAt                 DateTime?    @map("joined_at")
+  prizedAt                 DateTime?    @map("prized_at")
+  prizedMonth              Int?         @map("prized_month")
+  completedAt              DateTime?    @map("completed_at")
+  approvedById             String?      @map("approved_by")
+  approvedAt               DateTime?    @map("approved_at")
+  notes                    String?
+  version                  Int          @default(1)
+  createdAt                DateTime     @default(now()) @map("created_at")
+  updatedAt                DateTime     @updatedAt @map("updated_at")
+
+  group      ChitGroup @relation(fields: [groupId], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  approvedBy Staff?    @relation("MemberApprovedBy", fields: [approvedById], references: [id])
+
+  installments  Installment[]
+  auctionBids   AuctionBid[]
+  wonAuctions   Auction[]     @relation("AuctionWinner")
+  payouts       Payout[]
+  guarantors    Guarantor[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([groupId, ticketNumber])
+  @@index([customerId])
+  @@index([groupId, customerId])
+  @@index([status])
+  @@map("group_members")
+}
+
+// ==============================
+// INSTALLMENTS (Monthly Schedule)
+// ==============================
+
+enum InstallmentStatus {
+  UPCOMING
+  DUE
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  WAIVED
+}
+
+model Installment {
+  id              String            @id @default(uuid())
+  groupId         String            @map("group_id")
+  memberId        String            @map("member_id")
+  monthNumber     Int               @map("month_number")
+  baseAmountPaise BigInt            @map("base_amount_paise")
+  dividendPaise   BigInt            @default(0) @map("dividend_paise")
+  penaltyPaise    BigInt            @default(0) @map("penalty_paise")
+  netAmountPaise  BigInt            @map("net_amount_paise")
+  paidAmountPaise BigInt            @default(0) @map("paid_amount_paise")
+  balancePaise    BigInt            @map("balance_paise")
+  status          InstallmentStatus @default(UPCOMING)
+  dueDate         DateTime          @map("due_date") @db.Date
+  paidDate        DateTime?         @map("paid_date") @db.Date
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  group  ChitGroup   @relation(fields: [groupId], references: [id])
+  member GroupMember @relation(fields: [memberId], references: [id])
+
+  payments         Payment[]
+  penaltiesApplied PenaltyApplied[]
+
+  @@unique([memberId, monthNumber])
+  @@index([status])
+  @@index([dueDate, status])
+  @@index([groupId, monthNumber])
+  @@map("installments")
+}
+
+// ==============================
+// PAYMENTS
+// ==============================
+
+enum PaymentMethod {
+  CASH
+  UPI
+  NEFT
+  CHEQUE
+  ONLINE_GATEWAY
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  REVERSED
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  installmentId   String        @map("installment_id")
+  receiptNumber   String        @unique @map("receipt_number")
+  amountPaise     BigInt        @map("amount_paise")
+  method          PaymentMethod
+  transactionRef  String?       @map("transaction_ref")
+  screenshotUrl   String?       @map("screenshot_url")
+  status          PaymentStatus @default(PENDING)
+  paymentDate     DateTime      @map("payment_date") @db.Date
+  submittedAt     DateTime      @default(now()) @map("submitted_at")
+  verifiedAt      DateTime?     @map("verified_at")
+  verifiedById    String?       @map("verified_by")
+  rejectedAt      DateTime?     @map("rejected_at")
+  rejectionReason String?       @map("rejection_reason")
+  collectedById   String?       @map("collected_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  installment Installment @relation(fields: [installmentId], references: [id])
+  verifiedBy  Staff?      @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id])
+  collectedBy Staff?      @relation("PaymentCollectedBy", fields: [collectedById], references: [id])
+
+  @@index([status])
+  @@index([installmentId])
+  @@index([transactionRef])
+  @@map("payments")
+}
+
+// ==============================
+// AUCTIONS
+// ==============================
+
+enum AuctionStatus {
+  SCHEDULED
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+model Auction {
+  id                     String        @id @default(uuid())
+  groupId                String        @map("group_id")
+  monthNumber            Int           @map("month_number")
+  status                 AuctionStatus @default(SCHEDULED)
+  chitValuePaise         BigInt        @map("chit_value_paise")
+  commissionPaise        BigInt        @map("commission_paise")
+  winnerId               String?       @map("winner_id")
+  winningBidPaise        BigInt?       @map("winning_bid_paise")
+  prizeAmountPaise       BigInt?       @map("prize_amount_paise")
+  dividendPerMemberPaise BigInt?       @map("dividend_per_member_paise")
+  scheduledDate          DateTime?     @map("scheduled_date") @db.Date
+  conductedAt            DateTime?     @map("conducted_at")
+  conductedById          String?       @map("conducted_by")
+  notes                  String?
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+
+  group       ChitGroup    @relation(fields: [groupId], references: [id])
+  winner      GroupMember? @relation("AuctionWinner", fields: [winnerId], references: [id])
+  conductedBy Staff?       @relation("AuctionConductedBy", fields: [conductedById], references: [id])
+
+  bids   AuctionBid[]
+  payout Payout?
+
+  @@unique([groupId, monthNumber])
+  @@map("auctions")
+}
+
+model AuctionBid {
+  id             String   @id @default(uuid())
+  auctionId      String   @map("auction_id")
+  memberId       String   @map("member_id")
+  bidAmountPaise BigInt   @map("bid_amount_paise")
+  bidTime        DateTime @default(now()) @map("bid_time")
+  isWinner       Boolean  @default(false) @map("is_winner")
+
+  auction Auction     @relation(fields: [auctionId], references: [id])
+  member  GroupMember @relation(fields: [memberId], references: [id])
+
+  @@unique([auctionId, memberId])
+  @@map("auction_bids")
+}
+
+// ==============================
+// PAYOUTS
+// ==============================
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Payout {
+  id               String         @id @default(uuid())
+  auctionId        String?        @map("auction_id")
+  memberId         String         @map("member_id")
+  prizeAmountPaise BigInt         @map("prize_amount_paise")
+  deductionsPaise  BigInt         @default(0) @map("deductions_paise")
+  netPayoutPaise   BigInt         @map("net_payout_paise")
+  method           PaymentMethod?
+  transactionRef   String?        @map("transaction_ref")
+  bankAccount      String?        @map("bank_account")
+  bankIfsc         String?        @map("bank_ifsc")
+  status           PayoutStatus   @default(PENDING)
+  approvedById     String?        @map("approved_by")
+  approvedAt       DateTime?      @map("approved_at")
+  paidAt           DateTime?      @map("paid_at")
+  notes            String?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  auction    Auction?    @relation(fields: [auctionId], references: [id])
+  member     GroupMember @relation(fields: [memberId], references: [id])
+  approvedBy Staff?      @relation("PayoutApprovedBy", fields: [approvedById], references: [id])
+
+  @@unique([auctionId])
+  @@index([status])
+  @@map("payouts")
+}
+
+// ==============================
+// GUARANTORS
+// ==============================
+
+model Guarantor {
+  id                  String    @id @default(uuid())
+  memberId            String    @map("member_id")
+  guarantorCustomerId String?   @map("guarantor_customer_id")
+  name                String
+  phone               String?
+  address             String?
+  idProofType         String?   @map("id_proof_type")
+  idProofNumber       String?   @map("id_proof_number")
+  idProofUrl          String?   @map("id_proof_url")
+  relationship        String?
+  isActive            Boolean   @default(true) @map("is_active")
+  verifiedById        String?   @map("verified_by")
+  verifiedAt          DateTime? @map("verified_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  member            GroupMember @relation(fields: [memberId], references: [id])
+  guarantorCustomer Customer?   @relation("GuarantorCustomer", fields: [guarantorCustomerId], references: [id])
+  verifiedBy        Staff?      @relation("GuarantorVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@map("guarantors")
+}
+
+// ==============================
+// PENALTIES
+// ==============================
+
+model PenaltyRule {
+  id           String   @id @default(uuid())
+  productId    String   @map("product_id")
+  name         String
+  graceDays    Int      @default(0) @map("grace_days")
+  penaltyType  String   @map("penalty_type") // FIXED, PERCENTAGE, PER_DAY
+  valuePaise   BigInt?  @map("value_paise")
+  valuePercent Decimal? @map("value_percent") @db.Decimal(5, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product Product          @relation(fields: [productId], references: [id])
+  applied PenaltyApplied[]
+
+  @@map("penalty_rules")
+}
+
+model PenaltyApplied {
+  id            String    @id @default(uuid())
+  installmentId String    @map("installment_id")
+  ruleId        String?   @map("rule_id")
+  amountPaise   BigInt    @map("amount_paise")
+  reason        String?
+  waived        Boolean   @default(false)
+  waivedById    String?   @map("waived_by")
+  waivedAt      DateTime? @map("waived_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  installment Installment  @relation(fields: [installmentId], references: [id])
+  rule        PenaltyRule? @relation(fields: [ruleId], references: [id])
+  waivedBy    Staff?       @relation("PenaltyWaivedBy", fields: [waivedById], references: [id])
+
+  @@map("penalties_applied")
+}
+
+// ==============================
+// DOCUMENTS
+// ==============================
+
+enum DocumentType {
+  AADHAAR
+  PAN
+  VOTER_ID
+  PASSPORT
+  BANK_PROOF
+  ADDRESS_PROOF
+  PHOTO
+  PAYMENT_SCREENSHOT
+  AGREEMENT
+  OTHER
+}
+
+model Document {
+  id           String       @id @default(uuid())
+  entityType   String       @map("entity_type")
+  entityId     String       @map("entity_id")
+  customerId   String?      @map("customer_id")
+  docType      DocumentType @map("doc_type")
+  fileUrl      String       @map("file_url")
+  fileName     String?      @map("file_name")
+  fileSize     Int?         @map("file_size")
+  mimeType     String?      @map("mime_type")
+  checksum     String?
+  verified     Boolean      @default(false)
+  verifiedById String?      @map("verified_by")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  customer   Customer? @relation("CustomerDocuments", fields: [customerId], references: [id])
+  verifiedBy Staff?    @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([entityType, entityId])
+  @@map("documents")
+}
+
+// ==============================
+// LEDGER (Double-Entry Accounting)
+// ==============================
+
+enum LedgerType {
+  DEBIT
+  CREDIT
+}
+
+model LedgerEntry {
+  id                  String     @id @default(uuid())
+  groupId             String     @map("group_id")
+  entryDate           DateTime   @map("entry_date") @db.Date
+  narration           String
+  entryType           LedgerType @map("entry_type")
+  amountPaise         BigInt     @map("amount_paise")
+  accountHead         String     @map("account_head") // COLLECTION, COMMISSION, DIVIDEND, PAYOUT, PENALTY, REFUND
+  refType             String?    @map("ref_type")
+  refId               String?    @map("ref_id")
+  memberId            String?    @map("member_id")
+  runningBalancePaise BigInt?    @map("running_balance_paise")
+  createdBy           String?    @map("created_by")
+  createdAt           DateTime   @default(now()) @map("created_at")
+
+  group  ChitGroup    @relation(fields: [groupId], references: [id])
+  member GroupMember? @relation(fields: [memberId], references: [id])
+
+  @@index([groupId, entryDate])
+  @@index([memberId])
+  @@index([accountHead])
+  @@map("ledger_entries")
+}
+
+// ==============================
+// NOTIFICATIONS
+// ==============================
+
+enum NotificationChannel {
+  IN_APP
+  SMS
+  WHATSAPP
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
+
+model Notification {
+  id            String              @id @default(uuid())
+  recipientType String              @map("recipient_type") // 'customer' or 'staff'
+  recipientId   String              @map("recipient_id")
+  customerId    String?             @map("customer_id")
+  channel       NotificationChannel @default(IN_APP)
+  title         String
+  body          String
+  data          Json?
+  status        NotificationStatus  @default(QUEUED)
+  providerMsgId String?             @map("provider_msg_id")
+  sentAt        DateTime?           @map("sent_at")
+  deliveredAt   DateTime?           @map("delivered_at")
+  readAt        DateTime?           @map("read_at")
+  failureReason String?             @map("failure_reason")
+  retryCount    Int                 @default(0) @map("retry_count")
+  createdAt     DateTime            @default(now()) @map("created_at")
+
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@index([recipientType, recipientId, status])
+  @@map("notifications")
+}
+
+// ==============================
+// AUDIT LOG
+// ==============================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  actorType  String   @map("actor_type") // 'staff' or 'customer'
+  actorId    String   @map("actor_id")
+  action     String // CREATE, UPDATE, DELETE, APPROVE, REJECT, LOGIN
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  changes    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorType, actorId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+// ==============================
+// RECEIPT SEQUENCES
+// ==============================
+
+model ReceiptSequence {
+  id            String @id @default(uuid())
+  orgId         String @map("org_id")
+  prefix        String
+  currentNumber BigInt @default(0) @map("current_number")
+
+  @@unique([orgId, prefix])
+  @@map("receipt_sequences")
+}
