@@ -52,8 +52,17 @@ async function main() {
     data: { orgId: org.id, name: 'Hyderabad Branch', code: 'HYD', city: 'Hyderabad', state: 'Telangana' },
   });
 
-  const adminPass = await bcrypt.hash('Admin@123', 12);
-  const custPass = await bcrypt.hash('Customer@123', 12);
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const customerPassword = process.env.SEED_CUSTOMER_PASSWORD;
+  if (!adminPassword || adminPassword.length < 8) {
+    throw new Error('Set SEED_ADMIN_PASSWORD (min 8 chars) in the environment before seeding');
+  }
+  if (!customerPassword || customerPassword.length < 8) {
+    throw new Error('Set SEED_CUSTOMER_PASSWORD (min 8 chars) in the environment before seeding');
+  }
+
+  const adminPass = await bcrypt.hash(adminPassword, 12);
+  const custPass = await bcrypt.hash(customerPassword, 12);
 
   const admin = await prisma.staff.create({
     data: {
@@ -467,16 +476,16 @@ async function main() {
   });
 
   console.log('Seed complete!\n');
-  console.log('Login credentials (use phone + password on login page):\n');
+  console.log('Login phones (passwords come from SEED_* env vars — not printed):\n');
   console.log('  ADMIN / STAFF  (toggle "Admin / Staff")');
-  console.log('    Phone: 9876500001   Password: Admin@123   (Super Admin)');
-  console.log('    Phone: 9876500002   Password: Admin@123   (Branch Admin)');
-  console.log('    Phone: 9876500003   Password: Admin@123   (Collector)\n');
+  console.log('    Phone: 9876500001   (Super Admin)');
+  console.log('    Phone: 9876500002   (Branch Admin)');
+  console.log('    Phone: 9876500003   (Collector)\n');
   console.log('  MEMBER  (toggle "Member")');
-  console.log('    Phone: 9876543001   Password: Customer@123   (Rahul — lifted, has chits)');
-  console.log('    Phone: 9876543002   Password: Customer@123   (Priya — active, paid 3 months)');
-  console.log('    Phone: 9876543003   Password: Customer@123   (Arun — pending payment)');
-  console.log('    Phone: 9876543006   Password: Customer@123   (Sneha — join request pending)');
+  console.log('    Phone: 9876543001   (Rahul)');
+  console.log('    Phone: 9876543002   (Priya)');
+  console.log('    Phone: 9876543003   (Arun)');
+  console.log('    Phone: 9876543006   (Sneha)');
   console.log(`\n  Org: ${org.name}`);
   console.log(`  Groups: ${silverGroup.groupNumber} (ACTIVE), ${goldGroup.groupNumber} (OPEN), ${bronzeGroup.groupNumber} (OPEN)`);
 }

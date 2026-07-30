@@ -6,9 +6,9 @@ services:
     container_name: chitfund-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: chitfund
-      POSTGRES_PASSWORD: chitfund_dev_2024
-      POSTGRES_DB: chitfund
+      POSTGRES_USER: ${POSTGRES_USER:-chitfund}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your local .env}
+      POSTGRES_DB: ${POSTGRES_DB:-chitfund}
     ports:
       - '5432:5432'
     volumes:

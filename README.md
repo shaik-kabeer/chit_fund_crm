@@ -34,9 +34,11 @@ In production the API ignores `.env` files and reads only `process.env`.
 
 See **[DEPLOY.md](./DEPLOY.md)** for GitHub → Vercel (frontend) + API host + Supabase.
 
-## Demo logins (after seed / migrated data)
+## Demo logins
 
-| Role | Phone | Password |
-|------|-------|----------|
-| Admin | `9876500001` | `Admin@123` |
-| Member | `9876543001` | `Customer@123` |
+After seeding, credentials are taken from env vars (never commit real passwords):
+
+- `SEED_ADMIN_PASSWORD` — staff accounts  
+- `SEED_CUSTOMER_PASSWORD` — member accounts  
+
+See `.env.example`. For local demos, set those in your private `apps/api/.env` / shell before running `npm run db:seed`.
