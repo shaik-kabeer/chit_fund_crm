@@ -6,6 +6,7 @@ interface User {
   name: string;
   role: 'SUPER_ADMIN' | 'BRANCH_ADMIN' | 'COLLECTOR' | 'CUSTOMER';
   orgId: string;
+  branchId?: string | null;
 }
 
 interface AuthState {

@@ -204,6 +204,34 @@ export async function updateByAdmin(orgId: string, customerId: string, data: Rec
   return prisma.customer.update({ where: { id: customerId }, data: filtered });
 }
 
+export async function resetPassword(
+  orgId: string,
+  customerId: string,
+  requestedPassword?: string,
+) {
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, orgId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!customer) throw new ApiError(404, 'Customer not found');
+
+  const temporaryPassword = requestedPassword?.trim()
+    || `Stash@${randomBytes(4).toString('hex')}`;
+  if (temporaryPassword.length < 8) {
+    throw new ApiError(400, 'Temporary password must contain at least 8 characters');
+  }
+
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: {
+      passwordHash: await hashPassword(temporaryPassword),
+      tokenVersion: { increment: 1 },
+    },
+  });
+
+  return { temporaryPassword };
+}
+
 export async function submitKyc(customerId: string, data: Record<string, any>) {
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },

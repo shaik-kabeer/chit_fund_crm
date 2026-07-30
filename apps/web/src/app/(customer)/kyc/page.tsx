@@ -18,6 +18,11 @@ export default function KycPage() {
   const [kyc, setKyc] = useState(EMPTY_KYC);
   const [bank, setBank] = useState(EMPTY_BANK);
   const [message, setMessage] = useState('');
+  const [passwords, setPasswords] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['customer-profile'],
@@ -59,6 +64,23 @@ export default function KycPage() {
     onSuccess: () => {
       setMessage('Bank and payout details saved.');
       queryClient.invalidateQueries({ queryKey: ['customer-profile'] });
+    },
+  });
+
+  const changePassword = useMutation({
+    mutationFn: () => {
+      if (passwords.newPassword !== passwords.confirmPassword) {
+        throw new Error('New passwords do not match');
+      }
+      return api.post<{ message: string }>('/auth/customer/change-password', {
+        currentPassword: passwords.currentPassword,
+        newPassword: passwords.newPassword,
+      });
+    },
+    onSuccess: () => {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      window.location.href = '/login?passwordChanged=1';
     },
   });
 
@@ -138,6 +160,46 @@ export default function KycPage() {
         <button disabled={saveBank.isPending}
           className="rounded-lg bg-blue-600 px-5 py-2 text-white disabled:opacity-50">
           {saveBank.isPending ? 'Saving...' : 'Save Bank Details'}
+        </button>
+      </form>
+
+      <form
+        onSubmit={(event) => { event.preventDefault(); changePassword.mutate(); }}
+        className="rounded-xl border bg-white p-6 space-y-4"
+      >
+        <div>
+          <h2 className="font-semibold text-gray-800">Change password</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            After changing it, sign in again with the new password.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-3 gap-4">
+          {[
+            ['currentPassword', 'Current password'],
+            ['newPassword', 'New password'],
+            ['confirmPassword', 'Confirm new password'],
+          ].map(([key, label]) => (
+            <label key={key} className="text-sm">
+              <span className="mb-1 block font-medium text-gray-700">{label}</span>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={passwords[key as keyof typeof passwords]}
+                onChange={(event) => setPasswords({ ...passwords, [key]: event.target.value })}
+                className="w-full rounded-lg border px-3 py-2"
+              />
+            </label>
+          ))}
+        </div>
+        {changePassword.isError && (
+          <p className="text-sm text-red-600">{(changePassword.error as Error).message}</p>
+        )}
+        <button
+          disabled={changePassword.isPending}
+          className="rounded-lg bg-blue-600 px-5 py-2 text-white disabled:opacity-50"
+        >
+          {changePassword.isPending ? 'Changing...' : 'Change Password'}
         </button>
       </form>
     </div>

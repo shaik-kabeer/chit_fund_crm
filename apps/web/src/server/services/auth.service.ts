@@ -40,6 +40,7 @@ export async function staffLogin(phone: string, password: string): Promise<{ use
       phone: staff.phone,
       role: staff.role,
       orgId: staff.orgId,
+      branchId: staff.branchId,
       type: 'staff' as const,
     },
     tokens,
@@ -160,4 +161,36 @@ export async function refreshTokens(payload: TokenPayload): Promise<AuthTokens> 
     throw new ApiError(401, 'Token revoked');
   }
   return generateTokens({ ...payload, tokenVersion: customer.tokenVersion });
+}
+
+export async function changeCustomerPassword(
+  customerId: string,
+  currentPassword: string,
+  newPassword: string,
+) {
+  if (!currentPassword || !newPassword) {
+    throw new ApiError(400, 'Current password and new password are required');
+  }
+  if (newPassword.length < 8) {
+    throw new ApiError(400, 'New password must contain at least 8 characters');
+  }
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer || !customer.isActive) throw new ApiError(404, 'Customer not found');
+
+  const valid = await verifyPassword(currentPassword, customer.passwordHash);
+  if (!valid) throw new ApiError(400, 'Current password is incorrect');
+  if (await verifyPassword(newPassword, customer.passwordHash)) {
+    throw new ApiError(400, 'New password must be different from the current password');
+  }
+
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: {
+      passwordHash: await hashPassword(newPassword),
+      tokenVersion: { increment: 1 },
+    },
+  });
+
+  return { message: 'Password changed. Please sign in again.' };
 }

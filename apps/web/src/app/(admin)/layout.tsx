@@ -7,7 +7,7 @@ import Link from 'next/link';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', exact: true },
-  { href: '/admin/products', label: 'Products' },
+  { href: '/admin/products', label: 'Products', roles: ['SUPER_ADMIN', 'BRANCH_ADMIN'] },
   { href: '/admin/groups', label: 'Groups' },
   { href: '/admin/customers', label: 'Customers' },
   { href: '/admin/payments', label: 'Payments' },
@@ -38,7 +38,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
         <nav className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto -mb-px">
-          {navItems.map((item) => {
+          {navItems.filter((item) => !item.roles || item.roles.includes(user.role)).map((item) => {
             const isActive = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             return (
               <Link

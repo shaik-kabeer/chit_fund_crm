@@ -13,7 +13,7 @@ export default function AvailableGroupsPage() {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
-  const { data: groups, isLoading } = useQuery({
+  const { data: groups, isLoading, isError: loadFailed, error: loadError } = useQuery({
     queryKey: ['available-groups'],
     queryFn: () => api.get<any[]>('/groups/available'),
   });
@@ -59,8 +59,13 @@ export default function AvailableGroupsPage() {
 
       {success && <div className="bg-green-50 text-green-700 p-4 rounded-lg text-sm">{success}</div>}
       {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm">{error}</div>}
+      {loadFailed && (
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm">
+          Could not load available groups: {(loadError as Error).message}
+        </div>
+      )}
 
-      {!groups || groups.length === 0 ? (
+      {loadFailed ? null : !groups || groups.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border">
           <p className="text-gray-500">No groups are currently open for enrollment.</p>
         </div>
@@ -81,7 +86,7 @@ export default function AvailableGroupsPage() {
                     )}
                   </div>
                   <span className="text-xs px-3 py-1 rounded-full bg-green-100 text-green-700 font-medium">
-                    Open
+                    {group.status === 'ACTIVE' ? 'Active · Seats Available' : 'Open'}
                   </span>
                 </div>
 

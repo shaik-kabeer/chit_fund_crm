@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -10,10 +11,12 @@ import { useState } from 'react';
 export default function CustomerDetailPage() {
   const { id } = useParams();
   const queryClient = useQueryClient();
+  const user = useAuth((state) => state.user);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [kycReason, setKycReason] = useState('');
+  const [temporaryPassword, setTemporaryPassword] = useState('');
 
   const { data: customer, isLoading } = useQuery({
     queryKey: ['admin-customer', id],
@@ -40,10 +43,19 @@ export default function CustomerDetailPage() {
     },
   });
 
+  const resetPassword = useMutation({
+    mutationFn: () => api.post<{ temporaryPassword: string }>(
+      `/customers/${id}/reset-password`,
+      {},
+    ),
+    onSuccess: (result) => setTemporaryPassword(result.temporaryPassword),
+  });
+
   if (isLoading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
   if (!customer) return <div className="text-center py-12 text-gray-500">Customer not found</div>;
 
   const memberships = customer.memberships || [];
+  const canManage = user?.role === 'SUPER_ADMIN' || user?.role === 'BRANCH_ADMIN';
 
   return (
     <div className="space-y-6">
@@ -54,17 +66,28 @@ export default function CustomerDetailPage() {
             <p className="text-gray-500 mt-1">{customer.phone} · {customer.email || 'No email'}</p>
           </div>
           <div className="flex gap-2 items-center">
-            <button onClick={() => {
-              setEditForm({
-                name: customer.name || '', phone: customer.phone || '', email: customer.email || '',
-                fatherName: customer.fatherName || '', address: customer.address || '',
-                city: customer.city || '', state: customer.state || '', pincode: customer.pincode || '',
-                bankName: customer.bankName || '', bankAccountNo: customer.bankAccountNo || '',
-                bankIfsc: customer.bankIfsc || '', bankBranch: customer.bankBranch || '',
-                upiId: customer.upiId || '', isActive: customer.isActive,
-              });
-              setEditing(true);
-            }} className="px-3 py-1 border text-sm rounded-lg">Edit Customer</button>
+            {canManage && (
+              <>
+                <button
+                  onClick={() => resetPassword.mutate()}
+                  disabled={resetPassword.isPending}
+                  className="px-3 py-1 border text-sm rounded-lg disabled:opacity-50"
+                >
+                  {resetPassword.isPending ? 'Resetting...' : 'Reset Password'}
+                </button>
+                <button onClick={() => {
+                  setEditForm({
+                    name: customer.name || '', phone: customer.phone || '', email: customer.email || '',
+                    fatherName: customer.fatherName || '', address: customer.address || '',
+                    city: customer.city || '', state: customer.state || '', pincode: customer.pincode || '',
+                    bankName: customer.bankName || '', bankAccountNo: customer.bankAccountNo || '',
+                    bankIfsc: customer.bankIfsc || '', bankBranch: customer.bankBranch || '',
+                    upiId: customer.upiId || '', isActive: customer.isActive,
+                  });
+                  setEditing(true);
+                }} className="px-3 py-1 border text-sm rounded-lg">Edit Customer</button>
+              </>
+            )}
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               customer.kycStatus === 'VERIFIED' ? 'bg-green-100 text-green-700'
                 : customer.kycStatus === 'PENDING' || customer.kycStatus === 'SUBMITTED' ? 'bg-amber-100 text-amber-700'
@@ -72,6 +95,16 @@ export default function CustomerDetailPage() {
             }`}>{customer.kycStatus}</span>
           </div>
         </div>
+
+        {temporaryPassword && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            New temporary password: <strong className="select-all">{temporaryPassword}</strong>
+            <p className="mt-1 text-xs">Copy it now and share it securely. Existing sessions were signed out.</p>
+          </div>
+        )}
+        {resetPassword.isError && (
+          <p className="mt-3 text-sm text-red-600">{(resetPassword.error as Error).message}</p>
+        )}
 
         {editing && (
           <form onSubmit={(event) => { event.preventDefault(); updateCustomer.mutate(); }}
@@ -133,7 +166,7 @@ export default function CustomerDetailPage() {
             Previous rejection: {customer.kycRejectionReason}
           </p>
         )}
-        {customer.kycStatus === 'SUBMITTED' && (
+        {canManage && customer.kycStatus === 'SUBMITTED' && (
           <div className="mt-4 space-y-3">
             <textarea value={kycReason} onChange={(event) => setKycReason(event.target.value)}
               placeholder="Reason required when rejecting"

@@ -310,7 +310,11 @@ export async function updateStatus(orgId: string, id: string, newStatus: string)
 
 export async function getAvailable(orgId: string) {
   const groups = await prisma.chitGroup.findMany({
-    where: { orgId, status: 'OPEN', filledSeats: { lt: prisma.chitGroup.fields.totalSeats } },
+    where: {
+      orgId,
+      status: { in: ['OPEN', 'ACTIVE'] },
+      filledSeats: { lt: prisma.chitGroup.fields.totalSeats },
+    },
     select: {
       id: true,
       groupNumber: true,

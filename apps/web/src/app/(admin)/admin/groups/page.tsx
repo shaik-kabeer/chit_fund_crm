@@ -2,15 +2,18 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import Link from 'next/link';
 import { useState } from 'react';
 
 export default function AdminGroupsPage() {
   const queryClient = useQueryClient();
+  const user = useAuth((state) => state.user);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ productId: '', groupNumber: '', startDate: '' });
   const [error, setError] = useState('');
+  const canManage = user?.role === 'SUPER_ADMIN' || user?.role === 'BRANCH_ADMIN';
 
   const { data: groups, isLoading } = useQuery({
     queryKey: ['admin-groups'],
@@ -48,15 +51,15 @@ export default function AdminGroupsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Groups</h1>
           <p className="text-gray-500 mt-1">Manage chit batches</p>
         </div>
-        <button
+        {canManage && <button
           onClick={() => setShowForm(!showForm)}
           className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
         >
           {showForm ? 'Cancel' : '+ New Group'}
-        </button>
+        </button>}
       </div>
 
-      {showForm && (
+      {canManage && showForm && (
         <form onSubmit={handleCreate} className="bg-white rounded-xl border p-6 space-y-4">
           <h3 className="font-semibold text-gray-800">Create New Group</h3>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm">{error}</div>}

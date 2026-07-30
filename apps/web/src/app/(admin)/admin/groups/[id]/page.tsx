@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useState } from 'react';
 import Link from 'next/link';
@@ -110,6 +111,7 @@ function AddSeatForm({ groupId }: { groupId: string }) {
 export default function GroupDetailPage() {
   const { id } = useParams();
   const queryClient = useQueryClient();
+  const user = useAuth((state) => state.user);
   const [tab, setTab] = useState<'members' | 'months' | 'requests'>('months');
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [confirmLift, setConfirmLift] = useState<{ memberId: string; month: number } | null>(null);
@@ -189,6 +191,7 @@ export default function GroupDetailPage() {
   const months = monthData?.months || [];
   const activeMonthView = selectedMonth ?? (group.currentMonth > 0 ? group.currentMonth : 1);
   const monthView = months.find((m: any) => m.monthNumber === activeMonthView);
+  const canManage = user?.role === 'SUPER_ADMIN' || user?.role === 'BRANCH_ADMIN';
 
   return (
     <div className="space-y-6">
@@ -204,24 +207,24 @@ export default function GroupDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => {
+            {canManage && <button onClick={() => {
               setGroupForm({
                 groupNumber: group.groupNumber || '',
                 agreementNo: group.agreementNo || '',
                 startDate: group.startDate ? new Date(group.startDate).toISOString().slice(0, 10) : '',
               });
               setEditingGroup(true);
-            }} className="px-3 py-1 border text-sm rounded-lg">Edit Details</button>
+            }} className="px-3 py-1 border text-sm rounded-lg">Edit Details</button>}
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               group.status === 'ACTIVE' ? 'bg-green-100 text-green-700'
                 : group.status === 'OPEN' ? 'bg-blue-100 text-blue-700'
                 : 'bg-gray-100 text-gray-600'
             }`}>{group.status}</span>
-            {group.status === 'DRAFT' && (
+            {canManage && group.status === 'DRAFT' && (
               <button onClick={() => statusMutation.mutate('OPEN')}
                 className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg">Open Enrollment</button>
             )}
-            {group.status === 'OPEN' && (
+            {canManage && group.status === 'OPEN' && (
               <button onClick={() => statusMutation.mutate('ACTIVE')}
                 disabled={statusMutation.isPending || active.length + prized.length === 0}
                 className="px-3 py-1 bg-green-600 text-white text-sm rounded-lg disabled:opacity-50"
@@ -278,7 +281,7 @@ export default function GroupDetailPage() {
         </div>
       </div>
 
-      {approved.length > 0 && (
+      {canManage && approved.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center flex-wrap gap-3">
           <div>
             <p className="text-sm text-amber-800">
@@ -424,7 +427,7 @@ export default function GroupDetailPage() {
                           </span>
                         </td>
                         <td className="py-2.5 text-right">
-                          {!monthView.lifted && active.some((a: any) => a.id === row.memberId) && (
+                          {canManage && !monthView.lifted && active.some((a: any) => a.id === row.memberId) && (
                             confirmLift?.memberId === row.memberId && confirmLift?.month === activeMonthView ? (
                               <div className="flex justify-end gap-1">
                                 <button
@@ -461,7 +464,7 @@ export default function GroupDetailPage() {
       {/* MEMBERS TAB */}
       {tab === 'members' && (
         <div className="space-y-4">
-          <AddSeatForm groupId={String(id)} />
+          {canManage && <AddSeatForm groupId={String(id)} />}
           <div className="bg-white rounded-xl border p-6 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -530,12 +533,12 @@ export default function GroupDetailPage() {
                       {m.customer?.phone} · KYC: {m.customer?.kycStatus}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  {canManage && <div className="flex gap-2">
                     <button onClick={() => approveMutation.mutate(m.id)}
                       className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg">Approve</button>
                     <button onClick={() => rejectMutation.mutate(m.id)}
                       className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg">Reject</button>
-                  </div>
+                  </div>}
                 </div>
               ))}
             </div>

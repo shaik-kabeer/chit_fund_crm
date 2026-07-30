@@ -17,10 +17,10 @@ export async function requestJoin(
   opts?: { seatLabel?: string; quantity?: number },
 ) {
   const group = await prisma.chitGroup.findFirst({
-    where: { id: groupId, orgId, status: 'OPEN' },
+    where: { id: groupId, orgId, status: { in: ['OPEN', 'ACTIVE'] } },
     include: { product: true },
   });
-  if (!group) throw new ApiError(404, 'Group not found or not open for enrollment');
+  if (!group) throw new ApiError(404, 'Group not found or not accepting enrollment');
 
   const quantity = Math.min(Math.max(opts?.quantity ?? 1, 1), 10);
 
