@@ -50,3 +50,8 @@ yarn-error.log*
 # Misc
 *.pem
 .vercel
+
+# Prisma / local junk
+*.db-client_wal_index
+local-replica*
+apps/api/dev.db*
