@@ -1,14 +1,16 @@
 # Deploying ChitFund CMS
 
-## Architecture
+## Architecture (single Vercel deploy)
 
 | Piece | Host | Why |
 |-------|------|-----|
-| Next.js frontend (`apps/web`) | **Vercel** | First-class Next.js hosting |
-| NestJS API (`apps/api`) | **Railway / Render / Fly** | Long-running Node server, uploads, cron |
+| Next.js UI + `/api/*` routes (`apps/web`) | **Vercel** | One project: App Router handlers + Prisma |
 | Database | **Supabase Postgres** | Already migrated |
+| NestJS (`apps/api`) | **Parked / optional later** | Left in repo as reference; not required for production |
 
-Vercel does **not** run a traditional NestJS server well. Deploy the frontend on Vercel and the API on a Node host that uses the same GitHub repo.
+```text
+Browser → Vercel (apps/web) → /api/* → Prisma → Supabase
+```
 
 ---
 
@@ -16,56 +18,57 @@ Vercel does **not** run a traditional NestJS server well. Deploy the frontend on
 
 Repo: https://github.com/shaik-kabeer/chit_fund_crm
 
-Secrets stay out of git (`.env` / `.env.local` are gitignored). Configure values in each host’s Environment Variables UI.
+Secrets stay out of git (`.env` / `.env.local` are gitignored). Configure values in Vercel’s Environment Variables UI.
 
 ---
 
-## 2. Vercel (frontend)
+## 2. Vercel (full app)
 
 1. Import the GitHub repo in [Vercel](https://vercel.com/new).
 2. Set **Root Directory** to `apps/web` (important for this monorepo).
-3. Framework preset: **Next.js** (reads `apps/web/vercel.json` for install/build).
-4. Add Environment Variable:
-   | Name | Value |
-   |------|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://YOUR-API-HOST/api` |
+3. Framework preset: **Next.js** (reads `apps/web/vercel.json` for install/build — runs `prisma generate`, builds shared, then web).
+4. Add Environment Variables:
 
-5. Deploy. Copy the Vercel URL (e.g. `https://chit-fund-crm.vercel.app`).
+| Name | Required | Value |
+|------|----------|-------|
+| `DATABASE_URL` | Yes | Supabase Session pooler URI (URL-encode `@` in password as `%40`) |
+| `JWT_ACCESS_SECRET` | Yes | long random string |
+| `JWT_REFRESH_SECRET` | Yes | different long random string |
+| `NEXT_PUBLIC_API_URL` | Optional | `/api` (or leave unset — client defaults to `/api`) |
+| `DEFAULT_ORG_ID` | Optional | org id for member self-register |
+| `FRONTEND_URL` | Optional | not needed for same-origin cookies |
 
----
+5. Deploy. Open the Vercel URL and use staff/customer login as usual.
 
-## 3. API host (Railway example)
-
-1. New Railway project → Deploy from GitHub → same repo.
-2. Set **Root Directory** / start command for Nest:
-   - Build: `npm install && npm run build --workspace=@chitfund/shared && npm run build --workspace=@chitfund/api`
-   - Start: `npm run start --workspace=@chitfund/api` (or `node apps/api/dist/main.js`)
-3. Environment variables (from `.env.example`):
-
-| Name | Notes |
-|------|-------|
-| `NODE_ENV` | `production` |
-| `DATABASE_URL` | Supabase pooler URI (URL-encode `@` in password as `%40`) |
-| `JWT_ACCESS_SECRET` | long random string |
-| `JWT_REFRESH_SECRET` | different long random string |
-| `FRONTEND_URL` | your Vercel URL, e.g. `https://chit-fund-crm.vercel.app` |
-| `API_PREFIX` | `api` |
-| `PORT` | Railway sets this automatically — Nest already reads `PORT` |
-
-4. After API is live, set Vercel’s `NEXT_PUBLIC_API_URL` to `https://YOUR-API.up.railway.app/api` and redeploy the frontend.
+Payment screenshots are stored as **data URLs** in the payment record (no separate Blob/storage setup).
 
 ---
 
-## 4. Local development
+## 3. Nest API host (parked / optional later)
 
-Create local files (never commit them):
+`apps/api` remains in the repo if you ever want a separate Nest deployment again. It is **not** required when using the Next.js `/api` routes above.
 
-- `apps/api/.env` — copy from root `.env.example`
-- `packages/database/.env` — same `DATABASE_URL`
-- `apps/web/.env.local` — `NEXT_PUBLIC_API_URL=http://localhost:4000/api`
+---
+
+## 4. Local development (web-only)
+
+Create `apps/web/.env.local` (never commit):
+
+```bash
+NEXT_PUBLIC_API_URL=/api
+DATABASE_URL=...same Supabase pooler URI...
+JWT_ACCESS_SECRET=...
+JWT_REFRESH_SECRET=...
+```
+
+Also keep `packages/database/.env` with the same `DATABASE_URL` for Prisma CLI (`db:generate`, `db:seed`).
 
 ```bash
 npm install
 npm run db:generate
-npm run dev
+npm run dev --workspace=@chitfund/web
 ```
+
+Open http://localhost:3000 — API calls go to same-origin `/api`.
+
+To run the parked Nest API locally instead, point `NEXT_PUBLIC_API_URL=http://localhost:4000/api` and start `apps/api`.

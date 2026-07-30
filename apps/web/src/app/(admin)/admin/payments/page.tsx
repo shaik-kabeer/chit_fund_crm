@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, UPLOADS_BASE } from '@/lib/api';
+import { api, resolveUploadUrl } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useState } from 'react';
 import Link from 'next/link';
@@ -49,9 +49,7 @@ export default function AdminPaymentsPage() {
             const customer = member?.customer;
             const group = member?.group;
             const isOnline = p.method !== 'CASH';
-            const imgUrl = p.screenshotUrl
-              ? (p.screenshotUrl.startsWith('http') ? p.screenshotUrl : `${UPLOADS_BASE}${p.screenshotUrl}`)
-              : null;
+            const imgUrl = resolveUploadUrl(p.screenshotUrl);
 
             return (
               <div key={p.id} className="bg-white rounded-xl border p-5">

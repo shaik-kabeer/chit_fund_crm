@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -95,7 +95,16 @@ export const api = {
   },
 };
 
-export const UPLOADS_BASE =
-  (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/api\/?$/, '') ||
-  'http://localhost:4000';
+/** Origin for legacy relative upload paths; data URLs / absolute URLs are used as-is. */
+export const UPLOADS_BASE = (() => {
+  const api = process.env.NEXT_PUBLIC_API_URL || '/api';
+  if (api.startsWith('http')) return api.replace(/\/api\/?$/, '') || '';
+  return '';
+})();
+
+export function resolveUploadUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return url;
+  return `${UPLOADS_BASE}${url}`;
+}
 
