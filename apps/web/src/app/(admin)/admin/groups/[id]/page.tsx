@@ -115,6 +115,10 @@ export default function GroupDetailPage() {
   const [tab, setTab] = useState<'members' | 'months' | 'requests'>('months');
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   const [confirmLift, setConfirmLift] = useState<{ memberId: string; month: number } | null>(null);
+  const [markPaidTarget, setMarkPaidTarget] = useState<{
+    installmentId: string; memberId: string; balancePaise: number; name: string;
+  } | null>(null);
+  const [markPaidForm, setMarkPaidForm] = useState({ amount: '', method: 'CASH', date: new Date().toISOString().slice(0, 10), notes: '' });
   const [editingGroup, setEditingGroup] = useState(false);
   const [groupForm, setGroupForm] = useState({ groupNumber: '', agreementNo: '', startDate: '' });
 
@@ -139,7 +143,8 @@ export default function GroupDetailPage() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (memberId: string) => api.patch(`/memberships/${memberId}/reject`),
+    mutationFn: ({ memberId, reason }: { memberId: string; reason?: string }) =>
+      api.patch(`/memberships/${memberId}/reject`, { reason }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['group-detail', id] }),
   });
 
@@ -172,6 +177,25 @@ export default function GroupDetailPage() {
       setEditingGroup(false);
       queryClient.invalidateQueries({ queryKey: ['group-detail', id] });
       queryClient.invalidateQueries({ queryKey: ['admin-groups'] });
+    },
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: (payload: { installmentId: string; amountPaise: number; method: string; paymentDate: string; notes?: string }) =>
+      api.post('/payments/mark-paid', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-detail', id] });
+      queryClient.invalidateQueries({ queryKey: ['group-months', id] });
+      setMarkPaidTarget(null);
+      setMarkPaidForm({ amount: '', method: 'CASH', date: new Date().toISOString().slice(0, 10), notes: '' });
+    },
+  });
+
+  const remindUnpaidMutation = useMutation({
+    mutationFn: (monthNumber: number) =>
+      api.post('/notifications/remind-unpaid', { groupId: id, monthNumber }),
+    onSuccess: () => {
+      alert('Reminders sent to unpaid members!');
     },
   });
 
@@ -323,6 +347,21 @@ export default function GroupDetailPage() {
       {/* MONTHS TAB */}
       {tab === 'months' && (
         <div className="space-y-4">
+          {canManage && (
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => remindUnpaidMutation.mutate(activeMonthView)}
+                disabled={remindUnpaidMutation.isPending}
+                className="text-sm px-3 py-1 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 disabled:opacity-50"
+              >
+                {remindUnpaidMutation.isPending ? 'Sending...' : `Notify Unpaid (Month ${activeMonthView})`}
+              </button>
+              <a href={`/api/export/groups/${id}/months`}
+                className="text-sm px-3 py-1 bg-gray-100 border rounded hover:bg-gray-200">
+                Export Months CSV
+              </a>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {Array.from({ length: tenure }, (_, i) => i + 1).map((m) => {
               const info = months.find((x: any) => x.monthNumber === m);
@@ -427,6 +466,26 @@ export default function GroupDetailPage() {
                           </span>
                         </td>
                         <td className="py-2.5 text-right">
+                          {canManage && row.installmentId && row.installmentStatus !== 'PAID' && row.installmentStatus !== 'WAIVED' && !row.hasPendingVerification && (
+                            <button
+                              onClick={() => {
+                                setMarkPaidTarget({
+                                  installmentId: row.installmentId,
+                                  memberId: row.memberId,
+                                  balancePaise: Number(row.balancePaise || row.dueAmountPaise || 0),
+                                  name: row.name,
+                                });
+                                setMarkPaidForm({
+                                  amount: String(Number(row.balancePaise || row.dueAmountPaise || 0) / 100),
+                                  method: 'CASH',
+                                  date: new Date().toISOString().slice(0, 10),
+                                  notes: '',
+                                });
+                              }}
+                              className="px-2 py-1 border border-blue-300 text-blue-700 text-xs rounded hover:bg-blue-50 mr-1">
+                              Mark Paid
+                            </button>
+                          )}
                           {canManage && !monthView.lifted && active.some((a: any) => a.id === row.memberId) && (
                             confirmLift?.memberId === row.memberId && confirmLift?.month === activeMonthView ? (
                               <div className="flex justify-end gap-1">
@@ -455,6 +514,92 @@ export default function GroupDetailPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* Mark as Paid inline form */}
+          {markPaidTarget && (
+            <div className="bg-white rounded-xl border p-5 space-y-4">
+              <div className="flex justify-between items-center">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Mark as Paid — {markPaidTarget.name}
+                </h3>
+                <button onClick={() => setMarkPaidTarget(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Outstanding: {formatCurrency(markPaidTarget.balancePaise)}
+              </p>
+              {markPaidMutation.isError && (
+                <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                  {(markPaidMutation.error as any)?.message || 'Failed'}
+                </div>
+              )}
+              <div className="grid sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Amount (₹)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    value={markPaidForm.amount}
+                    onChange={(e) => setMarkPaidForm({ ...markPaidForm, amount: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Method</label>
+                  <select
+                    value={markPaidForm.method}
+                    onChange={(e) => setMarkPaidForm({ ...markPaidForm, method: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="NEFT">NEFT</option>
+                    <option value="CHEQUE">Cheque</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={markPaidForm.date}
+                    onChange={(e) => setMarkPaidForm({ ...markPaidForm, date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                  <input
+                    value={markPaidForm.notes}
+                    onChange={(e) => setMarkPaidForm({ ...markPaidForm, notes: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const amtRupees = parseFloat(markPaidForm.amount);
+                    if (!amtRupees || amtRupees <= 0) return;
+                    markPaidMutation.mutate({
+                      installmentId: markPaidTarget.installmentId,
+                      amountPaise: Math.round(amtRupees * 100),
+                      method: markPaidForm.method,
+                      paymentDate: markPaidForm.date,
+                      notes: markPaidForm.notes || undefined,
+                    });
+                  }}
+                  disabled={markPaidMutation.isPending || !markPaidForm.amount}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 hover:bg-blue-700"
+                >
+                  {markPaidMutation.isPending ? 'Saving...' : 'Record Payment'}
+                </button>
+                <button onClick={() => setMarkPaidTarget(null)} className="px-4 py-2 border text-sm rounded-lg">
+                  Cancel
+                </button>
               </div>
             </div>
           )}
@@ -536,8 +681,13 @@ export default function GroupDetailPage() {
                   {canManage && <div className="flex gap-2">
                     <button onClick={() => approveMutation.mutate(m.id)}
                       className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg">Approve</button>
-                    <button onClick={() => rejectMutation.mutate(m.id)}
-                      className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg">Reject</button>
+                    <button
+                      onClick={() => {
+                        const reason = prompt('Rejection reason (optional):');
+                        if (reason !== null) rejectMutation.mutate({ memberId: m.id, reason: reason || undefined });
+                      }}
+                      disabled={rejectMutation.isPending}
+                      className="px-3 py-1 bg-red-600 text-white text-xs rounded-lg disabled:opacity-50">Reject</button>
                   </div>}
                 </div>
               ))}

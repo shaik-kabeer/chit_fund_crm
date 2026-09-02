@@ -2,11 +2,28 @@ import { z } from 'zod';
 
 // ====== AUTH ======
 
-export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+export const staffLoginSchema = z.object({
+  phone: z.string().min(10).max(15),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
-export type LoginInput = z.infer<typeof loginSchema>;
+export type StaffLoginInput = z.infer<typeof staffLoginSchema>;
+
+export const customerLoginSchema = z.object({
+  phone: z.string().min(10).max(15),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const adminResetPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
+});
+export type AdminResetPasswordInput = z.infer<typeof adminResetPasswordSchema>;
 
 export const staffRegisterSchema = z.object({
   email: z.string().email(),
@@ -28,6 +45,11 @@ export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
 
 // ====== PRODUCT ======
 
+const monthlyPayoutEntrySchema = z.object({
+  monthNumber: z.number().int().positive(),
+  payoutAmountPaise: z.number().int().positive(),
+});
+
 export const createProductSchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().max(500).optional(),
@@ -37,16 +59,11 @@ export const createProductSchema = z.object({
   commissionPercent: z.number().min(0).max(5).default(5),
   minBidPercent: z.number().min(0).max(100).default(0),
   maxBidPercent: z.number().min(0).max(100).default(40),
-}).refine(
-  (data) => data.memberCount === data.tenureMonths,
-  { message: 'Member count must equal tenure months (one auction per month)', path: ['memberCount'] }
-).refine(
-  (data) => {
-    const expectedInstallment = Math.floor(data.chitValuePaise / data.tenureMonths);
-    return expectedInstallment > 0;
-  },
-  { message: 'Chit value must be divisible into positive installments', path: ['chitValuePaise'] }
-);
+  baseInstallmentPaise: z.number().int().positive().optional(),
+  liftedInstallmentPaise: z.number().int().positive().optional(),
+  payoutAmountPaise: z.number().int().positive().optional(),
+  monthlyPayouts: z.array(monthlyPayoutEntrySchema).optional(),
+});
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 
 export const updateProductSchema = z.object({
@@ -56,6 +73,9 @@ export const updateProductSchema = z.object({
   minBidPercent: z.number().min(0).max(100).optional(),
   maxBidPercent: z.number().min(0).max(100).optional(),
   isActive: z.boolean().optional(),
+  baseInstallmentPaise: z.number().int().positive().optional(),
+  liftedInstallmentPaise: z.number().int().positive().optional(),
+  monthlyPayouts: z.array(monthlyPayoutEntrySchema).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
@@ -65,10 +85,18 @@ export const createGroupSchema = z.object({
   productId: z.string().uuid(),
   groupNumber: z.string().min(1).max(30),
   agreementNo: z.string().max(50).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format'),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
   branchId: z.string().uuid().optional(),
 });
 export type CreateGroupInput = z.infer<typeof createGroupSchema>;
+
+export const updateGroupSchema = z.object({
+  groupNumber: z.string().min(1).max(30).optional(),
+  agreementNo: z.string().max(50).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
+  branchId: z.string().uuid().nullable().optional(),
+});
+export type UpdateGroupInput = z.infer<typeof updateGroupSchema>;
 
 export const updateGroupStatusSchema = z.object({
   status: z.enum(['DRAFT', 'OPEN', 'ACTIVE', 'FROZEN', 'COMPLETED', 'TERMINATED']),
@@ -97,13 +125,32 @@ export const updateCustomerSchema = createCustomerSchema.partial().omit({ passwo
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 
 export const updateBankDetailsSchema = z.object({
-  bankName: z.string().min(2).max(100),
-  bankAccountNo: z.string().min(5).max(20),
-  bankIfsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Invalid IFSC format'),
+  bankName: z.string().min(2).max(100).optional(),
+  bankAccountNo: z.string().min(5).max(20).optional(),
+  bankIfsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Invalid IFSC format').optional(),
   bankBranch: z.string().max(100).optional(),
   upiId: z.string().max(100).optional(),
 });
 export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;
+
+export const kycSubmitSchema = z.object({
+  name: z.string().optional(),
+  fatherName: z.string().optional(),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional(),
+  aadhaarLast4: z.string().regex(/^\d{4}$/).optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  pincode: z.string().optional(),
+});
+export type KycSubmitInput = z.infer<typeof kycSubmitSchema>;
+
+export const updateKycStatusSchema = z.object({
+  status: z.enum(['VERIFIED', 'REJECTED']),
+  reason: z.string().min(5).max(500).optional(),
+});
+export type UpdateKycStatusInput = z.infer<typeof updateKycStatusSchema>;
 
 // ====== PAYMENT ======
 
@@ -112,8 +159,8 @@ export const submitPaymentSchema = z.object({
   amountPaise: z.number().int().positive(),
   method: z.enum(['CASH', 'UPI', 'NEFT', 'CHEQUE', 'ONLINE_GATEWAY']),
   transactionRef: z.string().max(100).optional(),
-  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  screenshotUrl: z.string().url().optional(),
+  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  screenshotUrl: z.string().optional(),
 });
 export type SubmitPaymentInput = z.infer<typeof submitPaymentSchema>;
 
@@ -127,6 +174,15 @@ export const rejectPaymentSchema = z.object({
   reason: z.string().min(5).max(500),
 });
 export type RejectPaymentInput = z.infer<typeof rejectPaymentSchema>;
+
+export const markAsPaidSchema = z.object({
+  installmentId: z.string().uuid(),
+  amountPaise: z.number().int().positive(),
+  method: z.enum(['CASH', 'UPI', 'NEFT', 'CHEQUE', 'ONLINE_GATEWAY']).default('CASH'),
+  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  notes: z.string().max(200).optional(),
+});
+export type MarkAsPaidInput = z.infer<typeof markAsPaidSchema>;
 
 // ====== AUCTION ======
 
@@ -149,15 +205,38 @@ export type SubmitBidInput = z.infer<typeof submitBidSchema>;
 // ====== MEMBERSHIP ======
 
 export const joinGroupSchema = z.object({
-  groupId: z.string().uuid(),
+  seatLabel: z.string().max(60).optional(),
+  quantity: z.number().int().min(1).max(10).optional().default(1),
 });
 export type JoinGroupInput = z.infer<typeof joinGroupSchema>;
+
+export const adminAddSeatSchema = z.object({
+  groupId: z.string().uuid(),
+  customerId: z.string().uuid(),
+  seatLabel: z.string().max(60).optional(),
+});
+export type AdminAddSeatInput = z.infer<typeof adminAddSeatSchema>;
+
+export const updateSeatLabelSchema = z.object({
+  seatLabel: z.string().min(1).max(60),
+});
+export type UpdateSeatLabelInput = z.infer<typeof updateSeatLabelSchema>;
+
+export const liftMemberSchema = z.object({
+  monthNumber: z.number().int().positive().optional(),
+});
+export type LiftMemberInput = z.infer<typeof liftMemberSchema>;
 
 export const approveMemberSchema = z.object({
   memberId: z.string().uuid(),
   ticketNumber: z.number().int().positive().optional(),
 });
 export type ApproveMemberInput = z.infer<typeof approveMemberSchema>;
+
+export const rejectMemberSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+export type RejectMemberInput = z.infer<typeof rejectMemberSchema>;
 
 // ====== PAGINATION ======
 

@@ -1,12 +1,11 @@
 # Deploying ChitFund CMS
 
-## Architecture (single Vercel deploy)
+## Architecture
 
 | Piece | Host | Why |
 |-------|------|-----|
-| Next.js UI + `/api/*` routes (`apps/web`) | **Vercel** | One project: App Router handlers + Prisma |
-| Database | **Supabase Postgres** | Already migrated |
-| NestJS (`apps/api`) | **Parked / optional later** | Left in repo as reference; not required for production |
+| Next.js UI + `/api/*` routes (`apps/web`) | **Vercel** | Single project: App Router handlers + Prisma |
+| Database | **Supabase Postgres** | Managed PostgreSQL with Prisma migrations |
 
 ```text
 Browser → Vercel (apps/web) → /api/* → Prisma → Supabase
@@ -18,7 +17,7 @@ Browser → Vercel (apps/web) → /api/* → Prisma → Supabase
 
 Repo: https://github.com/shaik-kabeer/chit_fund_crm
 
-Secrets stay out of git (`.env` / `.env.local` are gitignored). Configure values in Vercel’s Environment Variables UI.
+Secrets stay out of git (`.env` / `.env.local` are gitignored). Configure values in Vercel's Environment Variables UI.
 
 ---
 
@@ -34,6 +33,7 @@ Secrets stay out of git (`.env` / `.env.local` are gitignored). Configure values
 | `DATABASE_URL` | Yes | Supabase Session pooler URI (URL-encode `@` in password as `%40`) |
 | `JWT_ACCESS_SECRET` | Yes | long random string |
 | `JWT_REFRESH_SECRET` | Yes | different long random string |
+| `CRON_SECRET` | Yes | Bearer token for Vercel Cron endpoints |
 | `NEXT_PUBLIC_API_URL` | Optional | `/api` (or leave unset — client defaults to `/api`) |
 | `DEFAULT_ORG_ID` | Optional | org id for member self-register |
 | `FRONTEND_URL` | Optional | not needed for same-origin cookies |
@@ -44,13 +44,7 @@ Payment screenshots are stored as **data URLs** in the payment record (no separa
 
 ---
 
-## 3. Nest API host (parked / optional later)
-
-`apps/api` remains in the repo if you ever want a separate Nest deployment again. It is **not** required when using the Next.js `/api` routes above.
-
----
-
-## 4. Local development (web-only)
+## 3. Local development
 
 Create `apps/web/.env.local` (never commit):
 
@@ -59,6 +53,7 @@ NEXT_PUBLIC_API_URL=/api
 DATABASE_URL=...same Supabase pooler URI...
 JWT_ACCESS_SECRET=...
 JWT_REFRESH_SECRET=...
+CRON_SECRET=...
 ```
 
 Also keep `packages/database/.env` with the same `DATABASE_URL` for Prisma CLI (`db:generate`, `db:seed`).
@@ -70,5 +65,3 @@ npm run dev --workspace=@chitfund/web
 ```
 
 Open http://localhost:3000 — API calls go to same-origin `/api`.
-
-To run the parked Nest API locally instead, point `NEXT_PUBLIC_API_URL=http://localhost:4000/api` and start `apps/api`.

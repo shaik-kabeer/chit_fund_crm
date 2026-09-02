@@ -40,10 +40,16 @@ export default function AdminCustomersPage() {
           <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
           <p className="text-gray-500 mt-1">Manage all registered members</p>
         </div>
-        <button onClick={() => { setShowAdd(!showAdd); setError(''); setCreatedPassword(''); }}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">
-          {showAdd ? 'Cancel' : '+ Add Member'}
-        </button>
+        <div className="flex items-center gap-2">
+          <a href="/api/export/customers"
+            className="text-sm px-3 py-1 bg-gray-100 border rounded hover:bg-gray-200">
+            Export CSV
+          </a>
+          <button onClick={() => { setShowAdd(!showAdd); setError(''); setCreatedPassword(''); }}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">
+            {showAdd ? 'Cancel' : '+ Add Member'}
+          </button>
+        </div>
       </div>
 
       {showAdd && (

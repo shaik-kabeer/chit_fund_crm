@@ -31,11 +31,17 @@ export default function AdminPaymentsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Payment Verification</h1>
-        <p className="text-gray-500 mt-1">
-          Review member payment requests (UPI with screenshot or cash). Approve → marked received for admin, paid for member.
-        </p>
+      <div className="flex justify-between items-start gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Payment Verification</h1>
+          <p className="text-gray-500 mt-1">
+            Review member payment requests (UPI with screenshot or cash). Approve → marked received for admin, paid for member.
+          </p>
+        </div>
+        <a href="/api/export/payments"
+          className="text-sm px-3 py-1 bg-gray-100 border rounded hover:bg-gray-200">
+          Export CSV
+        </a>
       </div>
 
       {!payments?.data || payments.data.length === 0 ? (

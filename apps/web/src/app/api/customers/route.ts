@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { json, handleRouteError, readJson } from '@/server/http';
+import { createCustomerSchema } from '@chitfund/shared';
+import { json, handleRouteError, parseBody } from '@/server/http';
 import { requireStaff } from '@/server/auth';
 import * as customerService from '@/server/services/customer.service';
 
@@ -22,13 +23,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireStaff(request, ['SUPER_ADMIN', 'BRANCH_ADMIN']);
-    const body = await readJson<{
-      name: string;
-      phone: string;
-      email?: string;
-      password?: string;
-      branchId?: string;
-    }>(request);
+    const body = await parseBody(createCustomerSchema, request);
     const data = await customerService.createByAdmin(user.orgId, user.id, body);
     return json(data);
   } catch (e) {

@@ -10,6 +10,8 @@ export function paiseToCurrency(paise: number | bigint, locale = 'en-IN'): strin
   }).format(rupees);
 }
 
+export { paiseToCurrency as formatCurrency };
+
 export function rupeesToPaise(rupees: number): number {
   return Math.round(rupees * PAISE_PER_RUPEE);
 }

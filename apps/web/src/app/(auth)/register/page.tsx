@@ -3,29 +3,53 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { customerRegisterSchema } from '@chitfund/shared';
+import { z } from 'zod';
 import { useAuth } from '@/lib/auth';
+
+const registerFormSchema = customerRegisterSchema
+  .extend({
+    email: z
+      .string()
+      .optional()
+      .refine((v) => !v || z.string().email().safeParse(v).success, {
+        message: 'Enter a valid email',
+      }),
+    confirm: z.string().min(1, 'Confirm your password'),
+  })
+  .refine((data) => data.password === data.confirm, {
+    message: 'Passwords do not match',
+    path: ['confirm'],
+  });
+
+type RegisterForm = z.infer<typeof registerFormSchema>;
 
 export default function RegisterPage() {
   const router = useRouter();
-  const register = useAuth((state) => state.register);
-  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', confirm: '' });
+  const registerAuth = useAuth((state) => state.register);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<RegisterForm>({
+    resolver: zodResolver(registerFormSchema),
+    defaultValues: { name: '', phone: '', email: '', password: '', confirm: '' },
+  });
+
+  const onSubmit = async (data: RegisterForm) => {
     setError('');
-    if (form.password !== form.confirm) {
-      setError('Passwords do not match');
-      return;
-    }
     setLoading(true);
     try {
-      await register({
-        name: form.name.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim() || undefined,
-        password: form.password,
+      await registerAuth({
+        name: data.name.trim(),
+        phone: data.phone.trim(),
+        email: data.email?.trim() || undefined,
+        password: data.password,
       });
       router.push('/dashboard');
     } catch (err: any) {
@@ -41,15 +65,29 @@ export default function RegisterPage() {
         <h1 className="text-2xl font-bold text-gray-900">Create member account</h1>
         <p className="text-sm text-gray-500 mt-1 mb-6">Register using the phone number you will use to sign in.</p>
 
-        <form onSubmit={submit} className="space-y-4">
-          <Field label="Full name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-          <Field label="Phone number" type="tel" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
-          <Field label="Email (optional)" type="email" required={false} value={form.email} onChange={(email) => setForm({ ...form, email })} />
-          <Field label="Password" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
-          <Field label="Confirm password" type="password" value={form.confirm} onChange={(confirm) => setForm({ ...form, confirm })} />
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <Field label="Full name" error={errors.name?.message} {...register('name')} />
+          <Field label="Phone number" type="tel" error={errors.phone?.message} {...register('phone')} />
+          <Field
+            label="Email (optional)"
+            type="email"
+            error={errors.email?.message}
+            {...register('email')}
+          />
+          <Field label="Password" type="password" error={errors.password?.message} {...register('password')} />
+          <Field
+            label="Confirm password"
+            type="password"
+            error={errors.confirm?.message}
+            {...register('confirm')}
+          />
 
           {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-          <button disabled={loading} className="w-full rounded-lg bg-blue-600 py-3 font-medium text-white disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-blue-600 py-3 font-medium text-white disabled:opacity-50"
+          >
             {loading ? 'Creating account...' : 'Create account'}
           </button>
         </form>
@@ -64,28 +102,23 @@ export default function RegisterPage() {
 
 function Field({
   label,
-  value,
-  onChange,
   type = 'text',
-  required = true,
+  error,
+  ...inputProps
 }: {
   label: string;
-  value: string;
-  onChange: (value: string) => void;
   type?: string;
-  required?: boolean;
-}) {
+  error?: string;
+} & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="block">
       <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>
       <input
-        required={required}
         type={type}
-        value={value}
-        minLength={type === 'password' ? 8 : undefined}
-        onChange={(event) => onChange(event.target.value)}
         className="w-full rounded-lg border px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+        {...inputProps}
       />
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </label>
   );
 }

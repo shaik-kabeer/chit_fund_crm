@@ -93,6 +93,28 @@ export const api = {
     }
     return res.json();
   },
+
+  /** Download a file (CSV, etc.) with auth headers and trigger browser save */
+  download: async (endpoint: string, filename: string): Promise<void> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Download failed' }));
+      throw new ApiError(res.status, err.message);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 /** Origin for legacy relative upload paths; data URLs / absolute URLs are used as-is. */

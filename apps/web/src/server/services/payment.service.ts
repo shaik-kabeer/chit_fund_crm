@@ -1,5 +1,7 @@
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
+import * as audit from './audit.service';
+import * as notifications from './notification.service';
 
 /** Online methods require payment screenshot proof */
 const ONLINE_METHODS = new Set(['UPI', 'NEFT', 'ONLINE_GATEWAY', 'CHEQUE']);
@@ -181,16 +183,33 @@ export async function verifyPayment(paymentId: string, verifiedById: string, org
     });
   });
 
+  void audit.logAction({
+    action: 'PAYMENT_VERIFIED',
+    entityType: 'Payment',
+    entityId: paymentId,
+    actorId: verifiedById,
+    orgId,
+    changes: { receiptNumber: payment.receiptNumber, amountPaise: payment.amountPaise.toString() },
+  }).catch(() => {});
+
+  void notifications.send({
+    recipientType: 'customer',
+    recipientId: payment.installment.member.customerId,
+    customerId: payment.installment.member.customerId,
+    title: 'Payment Verified',
+    body: `Your payment of ₹${Number(payment.amountPaise) / 100} (Receipt: ${payment.receiptNumber}) has been verified successfully.`,
+    data: { paymentId, type: 'PAYMENT_VERIFIED' },
+  }).catch(() => {});
+
   return { message: 'Payment verified and marked as received' };
 }
-
 export async function rejectPayment(paymentId: string, reason: string, rejectedById: string, orgId: string) {
   if (!reason || reason.trim().length < 5) {
     throw new ApiError(400, 'Write a clear rejection review (minimum 5 characters)');
   }
   const payment = await prisma.payment.findFirst({
     where: { id: paymentId, installment: { group: { orgId } } },
-    include: { installment: true },
+    include: { installment: { include: { member: true } } },
   });
   if (!payment) throw new ApiError(404, 'Payment not found');
   if (payment.status !== 'PENDING') {
@@ -206,9 +225,26 @@ export async function rejectPayment(paymentId: string, reason: string, rejectedB
     },
   });
 
+  void audit.logAction({
+    action: 'PAYMENT_REJECTED',
+    entityType: 'Payment',
+    entityId: paymentId,
+    actorId: rejectedById,
+    orgId,
+    changes: { reason: reason.trim() },
+  }).catch(() => {});
+
+  void notifications.send({
+    recipientType: 'customer',
+    recipientId: payment.installment.member.customerId,
+    customerId: payment.installment.member.customerId,
+    title: 'Payment Rejected',
+    body: `Your payment for Month ${payment.installment.monthNumber} was rejected. Reason: ${reason.trim()}. Please resubmit with correct details.`,
+    data: { paymentId, type: 'PAYMENT_REJECTED' },
+  }).catch(() => {});
+
   return { message: 'Payment request rejected' };
 }
-
 export async function getPendingPayments(orgId: string, page = 1, limit = 20) {
   const skip = (page - 1) * limit;
   const [data, total] = await Promise.all([
@@ -251,6 +287,121 @@ export async function getPendingPayments(orgId: string, page = 1, limit = 20) {
       hasNext: page * limit < total,
       hasPrev: page > 1,
     },
+  };
+}
+
+/**
+ * Admin/staff "Mark as Paid" — records an offline payment and immediately marks it VERIFIED.
+ * Useful for cash collections or when customer has no account.
+ */
+export async function markAsPaid(data: {
+  installmentId: string;
+  amountPaise: number;
+  method?: string;
+  paymentDate?: string;
+  notes?: string;
+  collectedById: string;
+  orgId: string;
+}) {
+  const method = (data.method || 'CASH').toUpperCase();
+  if (!ALLOWED_METHODS.has(method)) {
+    throw new ApiError(400, `Invalid payment method. Use: ${[...ALLOWED_METHODS].join(', ')}`);
+  }
+  if (data.amountPaise <= 0) {
+    throw new ApiError(400, 'Amount must be positive');
+  }
+
+  const installment = await prisma.installment.findFirst({
+    where: { id: data.installmentId, group: { orgId: data.orgId } },
+    include: { member: true },
+  });
+  if (!installment) throw new ApiError(404, 'Installment not found');
+
+  if (installment.status === 'PAID' || installment.status === 'WAIVED') {
+    throw new ApiError(400, 'Installment already settled');
+  }
+
+  if (BigInt(data.amountPaise) > installment.balancePaise) {
+    throw new ApiError(
+      400,
+      `Amount exceeds balance. Outstanding: ₹${Number(installment.balancePaise) / 100}`,
+    );
+  }
+
+  const receiptNumber = await generateReceiptNumber(installment.member.groupId);
+  const paymentDate = data.paymentDate ? new Date(data.paymentDate) : new Date();
+
+  const payment = await prisma.$transaction(async (tx) => {
+    const p = await tx.payment.create({
+      data: {
+        installmentId: data.installmentId,
+        receiptNumber,
+        amountPaise: BigInt(data.amountPaise),
+        method: method as any,
+        transactionRef: data.notes?.trim() || null,
+        paymentDate,
+        collectedById: data.collectedById,
+        status: 'VERIFIED',
+        verifiedAt: new Date(),
+        verifiedById: data.collectedById,
+      },
+    });
+
+    const newPaid = installment.paidAmountPaise + p.amountPaise;
+    const newBalance = installment.netAmountPaise - newPaid;
+    const fullyPaid = newBalance <= BigInt(0);
+
+    await tx.installment.update({
+      where: { id: data.installmentId },
+      data: {
+        paidAmountPaise: newPaid,
+        balancePaise: newBalance < BigInt(0) ? BigInt(0) : newBalance,
+        status: fullyPaid ? 'PAID' : 'PARTIALLY_PAID',
+        paidDate: fullyPaid ? new Date() : undefined,
+      },
+    });
+
+    await tx.groupMember.update({
+      where: { id: installment.memberId },
+      data: { totalPaidPaise: { increment: p.amountPaise } },
+    });
+
+    await tx.chitGroup.update({
+      where: { id: installment.groupId },
+      data: { totalCollectedPaise: { increment: p.amountPaise } },
+    });
+
+    await tx.ledgerEntry.create({
+      data: {
+        groupId: installment.groupId,
+        entryDate: new Date(),
+        narration: `Cash collection - Receipt #${receiptNumber} (${method}) - Admin marked paid`,
+        entryType: 'CREDIT',
+        amountPaise: p.amountPaise,
+        accountHead: 'COLLECTION',
+        refType: 'payment',
+        refId: p.id,
+        memberId: installment.memberId,
+        createdBy: data.collectedById,
+      },
+    });
+
+    return p;
+  });
+
+  void audit.logAction({
+    action: 'PAYMENT_MARKED_PAID',
+    entityType: 'Payment',
+    entityId: payment.id,
+    actorId: data.collectedById,
+    orgId: data.orgId,
+    changes: { receiptNumber, amountPaise: data.amountPaise, method, notes: data.notes },
+  }).catch(() => {});
+
+  return {
+    id: payment.id,
+    receiptNumber,
+    message: 'Payment recorded and marked as paid',
   };
 }
 

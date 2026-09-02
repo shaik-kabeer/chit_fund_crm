@@ -2,5 +2,15 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "cd ../.. && npm install",
-  "buildCommand": "cd ../.. && npm run db:generate --workspace=@chitfund/database && npm run build --workspace=@chitfund/shared && npm run build --workspace=@chitfund/web"
+  "buildCommand": "cd ../.. && npm run db:generate --workspace=@chitfund/database && npm run build --workspace=@chitfund/shared && npm run build --workspace=@chitfund/web",
+  "crons": [
+    {
+      "path": "/api/cron/overdue",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/payment-reminders",
+      "schedule": "0 9 15-20 * *"
+    }
+  ]
 }

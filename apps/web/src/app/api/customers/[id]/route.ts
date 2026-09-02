@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { json, handleRouteError, readJson } from '@/server/http';
+import { updateCustomerSchema } from '@chitfund/shared';
+import { json, handleRouteError, parseBody } from '@/server/http';
 import { requireStaff } from '@/server/auth';
 import * as customerService from '@/server/services/customer.service';
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
     const user = await requireStaff(request, ['SUPER_ADMIN', 'BRANCH_ADMIN']);
-    const body = await readJson(request);
+    const body = await parseBody(updateCustomerSchema, request);
     const data = await customerService.updateByAdmin(user.orgId, params.id, body);
     return json(data);
   } catch (e) {

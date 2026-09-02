@@ -1,6 +1,8 @@
 import { calculateDueDate } from '@chitfund/shared';
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
+import * as audit from './audit.service';
+import * as notifications from './notification.service';
 
 async function getNextTicketNumber(groupId: string): Promise<number> {
   const max = await prisma.groupMember.aggregate({
@@ -253,10 +255,28 @@ export async function approve(memberId: string, orgId: string, approvedById: str
     return updatedMember;
   });
 
+  void audit.logAction({
+    action: 'MEMBERSHIP_APPROVED',
+    entityType: 'GroupMember',
+    entityId: memberId,
+    actorId: approvedById,
+    orgId,
+    changes: { ticketNumber: ticket },
+  }).catch(() => {});
+
+  void notifications.send({
+    recipientType: 'customer',
+    recipientId: result.customerId,
+    customerId: result.customerId,
+    title: 'Membership Approved',
+    body: `Your request to join the chit group has been approved! You have been assigned ticket #${ticket}.`,
+    data: { memberId, type: 'MEMBERSHIP_APPROVED' },
+  }).catch(() => {});
+
   return result;
 }
 
-export async function reject(memberId: string, orgId: string) {
+export async function reject(memberId: string, orgId: string, rejectedById?: string, reason?: string) {
   const member = await prisma.groupMember.findFirst({
     where: { id: memberId, group: { orgId } },
   });
@@ -265,13 +285,42 @@ export async function reject(memberId: string, orgId: string) {
     throw new ApiError(400, 'Can only reject REQUESTED memberships');
   }
 
-  return prisma.groupMember.update({
+  const trimmedReason = reason?.trim();
+
+  const result = await prisma.groupMember.update({
     where: { id: memberId },
-    data: { status: 'REJECTED' },
+    data: {
+      status: 'REJECTED',
+      ...(trimmedReason ? { notes: trimmedReason } : {}),
+    },
   });
+
+  if (rejectedById) {
+    void audit.logAction({
+      action: 'MEMBERSHIP_REJECTED',
+      entityType: 'GroupMember',
+      entityId: memberId,
+      actorId: rejectedById,
+      orgId,
+      ...(trimmedReason ? { changes: { reason: trimmedReason } } : {}),
+    }).catch(() => {});
+  }
+
+  void notifications.send({
+    recipientType: 'customer',
+    recipientId: member.customerId,
+    customerId: member.customerId,
+    title: 'Membership Request Rejected',
+    body: trimmedReason
+      ? `Your membership request has been rejected. Reason: ${trimmedReason}`
+      : 'Your membership request has been rejected. Please contact admin for details.',
+    data: { memberId, type: 'MEMBERSHIP_REJECTED' },
+  }).catch(() => {});
+
+  return result;
 }
 
-export async function activateApproved(groupId: string, orgId: string) {
+export async function activateApproved(groupId: string, orgId: string, performedById?: string) {
   const group = await prisma.chitGroup.findFirst({
     where: { id: groupId, orgId },
     include: { product: true },
@@ -332,12 +381,23 @@ export async function activateApproved(groupId: string, orgId: string) {
     }
   });
 
+  if (performedById) {
+    void audit.logAction({
+      action: 'MEMBERS_ACTIVATED',
+      entityType: 'ChitGroup',
+      entityId: groupId,
+      actorId: performedById,
+      orgId,
+      changes: { activatedCount: approved.length },
+    }).catch(() => {});
+  }
+
   return { activated: approved.length };
 }
 
 export async function getMyMemberships(customerId: string) {
   return prisma.groupMember.findMany({
-    where: { customerId, status: { notIn: ['REJECTED', 'WITHDRAWN'] } },
+    where: { customerId, status: { notIn: ['WITHDRAWN'] } },
     include: {
       group: {
         include: {
@@ -474,6 +534,15 @@ export async function markAsLifted(
       },
     });
   });
+
+  void audit.logAction({
+    action: 'MEMBER_LIFTED',
+    entityType: 'GroupMember',
+    entityId: memberId,
+    actorId: markedById,
+    orgId,
+    changes: { liftMonth, payoutAmountPaise: payoutPaise.toString() },
+  }).catch(() => {});
 
   return {
     message: 'Member marked as lifted successfully',

@@ -4,16 +4,40 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { createGroupSchema } from '@chitfund/shared';
 import Link from 'next/link';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const groupFormSchema = createGroupSchema.extend({
+  startDate: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), {
+      message: 'Must be YYYY-MM-DD format',
+    }),
+});
+
+type GroupForm = z.infer<typeof groupFormSchema>;
 
 export default function AdminGroupsPage() {
   const queryClient = useQueryClient();
   const user = useAuth((state) => state.user);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ productId: '', groupNumber: '', startDate: '' });
   const [error, setError] = useState('');
   const canManage = user?.role === 'SUPER_ADMIN' || user?.role === 'BRANCH_ADMIN';
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<GroupForm>({
+    resolver: zodResolver(groupFormSchema),
+    defaultValues: { productId: '', groupNumber: '', startDate: '' },
+  });
 
   const { data: groups, isLoading } = useQuery({
     queryKey: ['admin-groups'],
@@ -26,22 +50,23 @@ export default function AdminGroupsPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.post('/groups', data),
+    mutationFn: (data: GroupForm) => api.post('/groups', {
+      productId: data.productId,
+      groupNumber: data.groupNumber,
+      startDate: data.startDate || undefined,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-groups'] });
       setShowForm(false);
-      setForm({ productId: '', groupNumber: '', startDate: '' });
+      reset({ productId: '', groupNumber: '', startDate: '' });
+      setError('');
     },
     onError: (err: any) => setError(err.message),
   });
 
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    createMutation.mutate({
-      productId: form.productId,
-      groupNumber: form.groupNumber,
-      startDate: form.startDate || undefined,
-    });
+  const onSubmit = (data: GroupForm) => {
+    setError('');
+    createMutation.mutate(data);
   };
 
   return (
@@ -60,33 +85,47 @@ export default function AdminGroupsPage() {
       </div>
 
       {canManage && showForm && (
-        <form onSubmit={handleCreate} className="bg-white rounded-xl border p-6 space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="bg-white rounded-xl border p-6 space-y-4">
           <h3 className="font-semibold text-gray-800">Create New Group</h3>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm">{error}</div>}
           <div className="grid sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
-              <select required value={form.productId}
-                onChange={(e) => setForm({ ...form, productId: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <select
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('productId')}
+              >
                 <option value="">Select product</option>
                 {products?.map((p: any) => (
                   <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.chitValuePaise)})</option>
                 ))}
               </select>
+              {errors.productId && (
+                <p className="text-xs text-red-500 mt-1">{errors.productId.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Batch Code *</label>
-              <input type="text" required value={form.groupNumber}
-                onChange={(e) => setForm({ ...form, groupNumber: e.target.value })}
+              <input
+                type="text"
                 placeholder="e.g. GRP-2026-001"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('groupNumber')}
+              />
+              {errors.groupNumber && (
+                <p className="text-xs text-red-500 mt-1">{errors.groupNumber.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input type="date" value={form.startDate}
-                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input
+                type="date"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('startDate')}
+              />
+              {errors.startDate && (
+                <p className="text-xs text-red-500 mt-1">{errors.startDate.message}</p>
+              )}
             </div>
           </div>
           <button type="submit" disabled={createMutation.isPending}

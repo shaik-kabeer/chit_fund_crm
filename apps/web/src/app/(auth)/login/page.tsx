@@ -2,24 +2,40 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 
+const loginSchema = z.object({
+  phone: z.string().min(10, 'Enter a valid phone number'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
+
 export default function LoginPage() {
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
   const [type, setType] = useState<'staff' | 'customer'>('customer');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const login = useAuth((s) => s.login);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { phone: '', password: '' },
+  });
+
+  const onSubmit = async (data: LoginForm) => {
     setError('');
     setLoading(true);
     try {
-      await login(phone, password, type);
+      await login(data.phone, data.password, type);
       router.push(type === 'staff' ? '/admin' : '/dashboard');
     } catch (err: any) {
       setError(err.message || 'Login failed');
@@ -57,28 +73,30 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
             <input
               type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
               placeholder="9876543210"
               className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              required
+              {...register('phone')}
             />
+            {errors.phone && (
+              <p className="text-xs text-red-500 mt-1">{errors.phone.message}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter password"
               className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              required
+              {...register('password')}
             />
+            {errors.password && (
+              <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>
+            )}
           </div>
 
           {error && (

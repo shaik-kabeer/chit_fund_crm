@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import { hashPassword } from '../auth';
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
+import * as audit from './audit.service';
 
 export async function createByAdmin(
   orgId: string,
@@ -310,7 +311,7 @@ export async function updateKycStatus(
     throw new ApiError(400, 'Write a clear rejection reason (minimum 5 characters)');
   }
 
-  return prisma.customer.update({
+  const result = await prisma.customer.update({
     where: { id: customerId },
     data: {
       kycStatus: status as any,
@@ -319,4 +320,15 @@ export async function updateKycStatus(
       kycRejectionReason: status === 'REJECTED' ? reason!.trim() : null,
     },
   });
+
+  void audit.logAction({
+    action: 'KYC_STATUS_CHANGED',
+    entityType: 'Customer',
+    entityId: customerId,
+    actorId: verifiedById,
+    orgId,
+    changes: { status, reason: status === 'REJECTED' ? reason!.trim() : undefined },
+  }).catch(() => {});
+
+  return result;
 }

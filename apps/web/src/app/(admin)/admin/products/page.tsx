@@ -4,21 +4,66 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 
 type Step = 'basics' | 'payouts' | null;
+
+const productBasicsSchema = z.object({
+  name: z.string().min(2, 'Product name must be at least 2 characters'),
+  description: z.string().optional(),
+  chitValueRupees: z
+    .string()
+    .min(1, 'Chit value is required')
+    .refine((v) => {
+      const n = parseFloat(v);
+      return !isNaN(n) && n > 0;
+    }, 'Enter a valid chit value'),
+  memberCount: z
+    .string()
+    .min(1, 'Number of months is required')
+    .refine((v) => {
+      const n = parseInt(v, 10);
+      return !isNaN(n) && n >= 1;
+    }, 'Enter a valid number of months / members'),
+  baseInstallmentRupees: z.string().optional(),
+  liftedInstallmentRupees: z.string().optional(),
+});
+
+type ProductBasicsForm = z.infer<typeof productBasicsSchema>;
 
 export default function AdminProductsPage() {
   const queryClient = useQueryClient();
   const [step, setStep] = useState<Step>(null);
-  const [form, setForm] = useState({
-    name: '', description: '', chitValueRupees: '', memberCount: '',
-    baseInstallmentRupees: '', liftedInstallmentRupees: '',
-  });
   const [monthlyPayouts, setMonthlyPayouts] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any | null>(null);
   const [editPayouts, setEditPayouts] = useState<string[]>([]);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    getValues,
+    watch,
+    formState: { errors },
+  } = useForm<ProductBasicsForm>({
+    resolver: zodResolver(productBasicsSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      chitValueRupees: '',
+      memberCount: '',
+      baseInstallmentRupees: '',
+      liftedInstallmentRupees: '',
+    },
+  });
+
+  const watchedName = watch('name');
+  const watchedMemberCount = watch('memberCount');
+  const watchedChitValue = watch('chitValueRupees');
 
   const { data: products, isLoading } = useQuery({
     queryKey: ['products'],
@@ -61,29 +106,25 @@ export default function AdminProductsPage() {
 
   const resetAll = () => {
     setStep(null);
-    setForm({ name: '', description: '', chitValueRupees: '', memberCount: '',
-      baseInstallmentRupees: '', liftedInstallmentRupees: '' });
+    reset({
+      name: '',
+      description: '',
+      chitValueRupees: '',
+      memberCount: '',
+      baseInstallmentRupees: '',
+      liftedInstallmentRupees: '',
+    });
     setMonthlyPayouts([]);
     setError('');
   };
 
-  const goToPayouts = (e: React.FormEvent) => {
-    e.preventDefault();
+  const goToPayouts = handleSubmit((data) => {
     setError('');
-    const months = parseInt(form.memberCount);
-    if (!months || months < 1) {
-      setError('Enter a valid number of months / members');
-      return;
-    }
-    const chit = parseFloat(form.chitValueRupees);
-    if (!chit || chit <= 0) {
-      setError('Enter a valid chit value');
-      return;
-    }
-    // Prefill each month with chit value as default (admin can edit)
+    const months = parseInt(data.memberCount, 10);
+    const chit = parseFloat(data.chitValueRupees);
     setMonthlyPayouts(Array.from({ length: months }, () => String(chit)));
     setStep('payouts');
-  };
+  });
 
   const fillAll = (value: string) => {
     setMonthlyPayouts(monthlyPayouts.map(() => value));
@@ -92,7 +133,8 @@ export default function AdminProductsPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const tenure = parseInt(form.memberCount);
+    const form = getValues();
+    const tenure = parseInt(form.memberCount, 10);
     const chitValuePaise = Math.round(parseFloat(form.chitValueRupees) * 100);
     const baseInstallmentPaise = form.baseInstallmentRupees
       ? Math.round(parseFloat(form.baseInstallmentRupees) * 100)
@@ -149,42 +191,66 @@ export default function AdminProductsPage() {
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
-              <input type="text" required value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input
+                type="text"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('name')}
+              />
+              {errors.name && (
+                <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Chit Value (₹) *</label>
-              <input type="number" required value={form.chitValueRupees}
-                onChange={(e) => setForm({ ...form, chitValueRupees: e.target.value })}
-                placeholder="e.g. 100000" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input
+                type="number"
+                placeholder="e.g. 100000"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('chitValueRupees')}
+              />
+              {errors.chitValueRupees && (
+                <p className="text-xs text-red-500 mt-1">{errors.chitValueRupees.message}</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Number of Months / Members *</label>
-              <input type="number" required min={1} value={form.memberCount}
-                onChange={(e) => setForm({ ...form, memberCount: e.target.value })}
-                placeholder="e.g. 20" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input
+                type="number"
+                min={1}
+                placeholder="e.g. 20"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('memberCount')}
+              />
+              {errors.memberCount && (
+                <p className="text-xs text-red-500 mt-1">{errors.memberCount.message}</p>
+              )}
               <p className="text-xs text-gray-400 mt-1">Tenure months = member count (one lift per month)</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <input type="text" value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input
+                type="text"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('description')}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Monthly EMI — Not Lifted (₹)</label>
-              <input type="number" value={form.baseInstallmentRupees}
-                onChange={(e) => setForm({ ...form, baseInstallmentRupees: e.target.value })}
+              <input
+                type="number"
                 placeholder="Auto: chit ÷ months"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('baseInstallmentRupees')}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Monthly EMI — After Lift (₹)</label>
-              <input type="number" value={form.liftedInstallmentRupees}
-                onChange={(e) => setForm({ ...form, liftedInstallmentRupees: e.target.value })}
+              <input
+                type="number"
                 placeholder="Same as non-lifted if blank"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                {...register('liftedInstallmentRupees')}
+              />
             </div>
           </div>
 
@@ -198,7 +264,7 @@ export default function AdminProductsPage() {
         <form onSubmit={handleCreate} className="bg-white rounded-xl border p-6 space-y-4">
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
             <span className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
-            Payout if member lifts in each month — {form.name} ({form.memberCount} months)
+            Payout if member lifts in each month — {watchedName} ({watchedMemberCount} months)
           </div>
           {error && <div className="bg-red-50 text-red-600 p-3 rounded text-sm">{error}</div>}
 
@@ -222,7 +288,7 @@ export default function AdminProductsPage() {
               Apply to all
             </button>
             <button type="button"
-              onClick={() => fillAll(form.chitValueRupees)}
+              onClick={() => fillAll(watchedChitValue)}
               className="px-3 py-1.5 border text-sm rounded-lg hover:bg-white">
               Use chit value
             </button>

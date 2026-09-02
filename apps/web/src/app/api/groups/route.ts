@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { json, handleRouteError, readJson } from '@/server/http';
+import { createGroupSchema } from '@chitfund/shared';
+import { json, handleRouteError, parseBody } from '@/server/http';
 import { requireAuth, requireStaff } from '@/server/auth';
 import * as groupService from '@/server/services/group.service';
 
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireStaff(request, ['SUPER_ADMIN', 'BRANCH_ADMIN']);
-    const body = await readJson(request);
-    const data = await groupService.create(user.orgId, { ...body, createdBy: user.id });
+    const body = await parseBody(createGroupSchema, request);
+    const data = await groupService.create(user.orgId, {
+      ...body,
+      createdBy: user.id,
+    } as Parameters<typeof groupService.create>[1]);
     return json(data);
   } catch (e) {
     return handleRouteError(e);

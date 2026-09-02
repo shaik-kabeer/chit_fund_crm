@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate --workspace=@chitfund/database
+      - run: npm run build --workspace=@chitfund/shared
+      - name: Typecheck web
+        run: npx tsc --noEmit
+        working-directory: apps/web
+      - name: Build web
+        run: npm run build --workspace=@chitfund/web
+        env:
+          DATABASE_URL: "postgresql://fake:fake@localhost:5432/fake"
+          JWT_ACCESS_SECRET: "ci-test-secret"
+          JWT_REFRESH_SECRET: "ci-test-refresh-secret"

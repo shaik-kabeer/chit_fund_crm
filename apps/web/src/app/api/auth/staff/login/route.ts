@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { handleRouteError, readJson } from '@/server/http';
+import { staffLoginSchema } from '@chitfund/shared';
+import { ApiError, handleRouteError, parseBody } from '@/server/http';
+import { rateLimit } from '@/server/rate-limit';
 import { setRefreshCookie } from '@/server/auth';
 import * as authService from '@/server/services/auth.service';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await readJson<{ phone: string; password: string }>(request);
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown';
+    const { success } = rateLimit(`auth:${ip}`, 5, 60_000);
+    if (!success) throw new ApiError(429, 'Too many attempts. Please try again later.');
+
+    const body = await parseBody(staffLoginSchema, request);
     const { user, tokens } = await authService.staffLogin(body.phone, body.password);
     const response = NextResponse.json({ user, accessToken: tokens.accessToken });
     setRefreshCookie(response, tokens.refreshToken);

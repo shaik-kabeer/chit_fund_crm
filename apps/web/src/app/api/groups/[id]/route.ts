@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { json, handleRouteError, readJson } from '@/server/http';
+import { updateGroupSchema } from '@chitfund/shared';
+import { json, handleRouteError, parseBody } from '@/server/http';
 import { requireAuth, requireStaff } from '@/server/auth';
 import * as groupService from '@/server/services/group.service';
 
@@ -18,12 +19,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
     const user = await requireStaff(request, ['SUPER_ADMIN', 'BRANCH_ADMIN']);
-    const body = await readJson<{
-      groupNumber?: string;
-      agreementNo?: string;
-      startDate?: string;
-      branchId?: string | null;
-    }>(request);
+    const body = await parseBody(updateGroupSchema, request);
     const data = await groupService.update(user.orgId, params.id, body);
     return json(data);
   } catch (e) {

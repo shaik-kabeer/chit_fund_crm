@@ -1,44 +1,77 @@
 # ChitFund CMS
 
-Full-stack Chit Fund Management System — Next.js, NestJS, PostgreSQL (Supabase), Turborepo.
+A chit fund management system built with Next.js, Prisma, and Supabase.
 
-## Stack
+## Architecture
 
-- **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind
-- **Backend**: NestJS + Prisma
-- **Database**: Supabase Postgres
-- **Monorepo**: Turborepo
+- **Frontend + API**: `apps/web` — Next.js App Router with embedded API routes
+- **Database**: `packages/database` — Prisma schema and migrations (Supabase PostgreSQL)
+- **Shared**: `packages/shared` — Zod schemas, TypeScript types, utility functions, constants
 
-## Quick start (local)
+## Tech Stack
 
-1. `npm install`
-2. Copy `.env.example` values into local (gitignored) files:
-   - `apps/api/.env`
-   - `packages/database/.env`
-   - `apps/web/.env.local` (`NEXT_PUBLIC_API_URL=http://localhost:4000/api`)
-3. `npm run db:generate`
-4. `npm run dev`
+- **Framework**: Next.js 14 (App Router)
+- **Database**: Supabase PostgreSQL via Prisma ORM
+- **Auth**: JWT (access + refresh tokens via httpOnly cookies)
+- **UI**: Tailwind CSS, Radix UI, Recharts
+- **Forms**: react-hook-form with Zod resolvers
+- **State**: Zustand + TanStack Query
+- **Testing**: Vitest
+- **Deployment**: Vercel (single project)
 
-- Web: http://localhost:3000  
-- API: http://localhost:4000/api  
-- Swagger: http://localhost:4000/api/docs  
+## Getting Started
 
-## Environment variables
+```bash
+npm install
+cp apps/web/.env.example apps/web/.env.local
+# Fill in DATABASE_URL, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET
 
-**Do not commit `.env` files.** In production, set variables in Vercel / Railway / etc.  
-See `.env.example` and [DEPLOY.md](./DEPLOY.md).
+npm run db:generate --workspace=@chitfund/database
+npm run dev --workspace=@chitfund/web
+```
 
-In production the API ignores `.env` files and reads only `process.env`.
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev --workspace=@chitfund/web` | Start dev server |
+| `npm run build --workspace=@chitfund/web` | Production build |
+| `npm run test --workspace=@chitfund/web` | Run tests |
+| `npm run lint --workspace=@chitfund/web` | ESLint check |
+| `npm run db:generate --workspace=@chitfund/database` | Generate Prisma client |
+| `npm run db:migrate --workspace=@chitfund/database` | Run migrations |
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | Supabase Postgres connection string |
+| `JWT_ACCESS_SECRET` | Yes | Secret for access token signing |
+| `JWT_REFRESH_SECRET` | Yes | Secret for refresh token signing |
+| `CRON_SECRET` | Yes | Bearer token for Vercel Cron endpoints |
+| `NEXT_PUBLIC_API_URL` | No | Defaults to `/api` |
+
+## Features
+
+- Multi-role auth (Super Admin, Branch Admin, Collector, Customer)
+- Chit group lifecycle (Draft → Open → Active → Completed)
+- Payment submission, verification, and tracking
+- KYC management and approval workflows
+- Audit logging for all critical actions
+- Overdue detection via daily cron
+- Analytics dashboard with charts
+- CSV export for reports
+- Rate-limited auth endpoints
 
 ## Deploy
 
-See **[DEPLOY.md](./DEPLOY.md)** for GitHub → Vercel (frontend) + API host + Supabase.
+See **[DEPLOY.md](./DEPLOY.md)** for GitHub → Vercel + Supabase setup.
 
 ## Demo logins
 
 After seeding, credentials are taken from env vars (never commit real passwords):
 
-- `SEED_ADMIN_PASSWORD` — staff accounts  
-- `SEED_CUSTOMER_PASSWORD` — member accounts  
+- `SEED_ADMIN_PASSWORD` — staff accounts
+- `SEED_CUSTOMER_PASSWORD` — member accounts
 
-See `.env.example`. For local demos, set those in your private `apps/api/.env` / shell before running `npm run db:seed`.
+Set those in your private `apps/web/.env.local` or shell before running `npm run db:seed`.

@@ -17,6 +17,8 @@ export default function CustomerDetailPage() {
   const [editForm, setEditForm] = useState<any>({});
   const [kycReason, setKycReason] = useState('');
   const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyForm, setNotifyForm] = useState({ title: '', body: '', channel: 'IN_APP' });
 
   const { data: customer, isLoading } = useQuery({
     queryKey: ['admin-customer', id],
@@ -51,6 +53,20 @@ export default function CustomerDetailPage() {
     onSuccess: (result) => setTemporaryPassword(result.temporaryPassword),
   });
 
+  const sendNotification = useMutation({
+    mutationFn: () => api.post('/notifications/send', {
+      customerId: id,
+      title: notifyForm.title,
+      body: notifyForm.body,
+      channel: notifyForm.channel,
+    }),
+    onSuccess: () => {
+      setNotifyOpen(false);
+      setNotifyForm({ title: '', body: '', channel: 'IN_APP' });
+      alert('Notification sent!');
+    },
+  });
+
   if (isLoading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
   if (!customer) return <div className="text-center py-12 text-gray-500">Customer not found</div>;
 
@@ -68,6 +84,12 @@ export default function CustomerDetailPage() {
           <div className="flex gap-2 items-center">
             {canManage && (
               <>
+                <button
+                  onClick={() => setNotifyOpen(!notifyOpen)}
+                  className="px-3 py-1 bg-amber-50 border border-amber-300 text-amber-700 text-sm rounded-lg hover:bg-amber-100"
+                >
+                  Notify
+                </button>
                 <button
                   onClick={() => resetPassword.mutate()}
                   disabled={resetPassword.isPending}
@@ -104,6 +126,58 @@ export default function CustomerDetailPage() {
         )}
         {resetPassword.isError && (
           <p className="mt-3 text-sm text-red-600">{(resetPassword.error as Error).message}</p>
+        )}
+
+        {notifyOpen && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-amber-900">Send Notification to {customer.name}</h3>
+            {sendNotification.isError && (
+              <p className="text-xs text-red-600">{(sendNotification.error as Error).message}</p>
+            )}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Title</label>
+                <input
+                  value={notifyForm.title}
+                  onChange={(e) => setNotifyForm({ ...notifyForm, title: e.target.value })}
+                  placeholder="Payment Reminder"
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Channel</label>
+                <select
+                  value={notifyForm.channel}
+                  onChange={(e) => setNotifyForm({ ...notifyForm, channel: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                >
+                  <option value="IN_APP">In-App</option>
+                  <option value="WHATSAPP">WhatsApp (coming soon)</option>
+                  <option value="SMS">SMS (coming soon)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Message</label>
+              <textarea
+                value={notifyForm.body}
+                onChange={(e) => setNotifyForm({ ...notifyForm, body: e.target.value })}
+                placeholder="Dear member, your payment of ₹X for group Y is due..."
+                rows={3}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => sendNotification.mutate()}
+                disabled={sendNotification.isPending || !notifyForm.title.trim() || !notifyForm.body.trim()}
+                className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg disabled:opacity-50"
+              >
+                {sendNotification.isPending ? 'Sending...' : 'Send Notification'}
+              </button>
+              <button onClick={() => setNotifyOpen(false)} className="px-4 py-2 border text-sm rounded-lg">Cancel</button>
+            </div>
+          </div>
         )}
 
         {editing && (

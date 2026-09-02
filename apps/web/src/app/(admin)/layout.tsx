@@ -11,6 +11,7 @@ const navItems = [
   { href: '/admin/groups', label: 'Groups' },
   { href: '/admin/customers', label: 'Customers' },
   { href: '/admin/payments', label: 'Payments' },
+  { href: '/admin/audit', label: 'Activity Log', roles: ['SUPER_ADMIN'] },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

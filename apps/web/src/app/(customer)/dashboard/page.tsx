@@ -15,6 +15,7 @@ export default function CustomerDashboard() {
 
   const active = memberships?.filter((m) => m.status === 'ACTIVE' || m.status === 'PRIZED') || [];
   const pending = memberships?.filter((m) => m.status === 'REQUESTED' || m.status === 'APPROVED') || [];
+  const rejected = memberships?.filter((m) => m.status === 'REJECTED') || [];
 
   return (
     <div className="space-y-8">
@@ -81,6 +82,39 @@ export default function CustomerDashboard() {
                   </div>
                 </div>
               </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rejected.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800 mb-3">Rejected Requests</h2>
+          <div className="space-y-3">
+            {rejected.map((m: any) => (
+              <div key={m.id} className="bg-white rounded-xl border border-red-200 p-5">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="font-medium text-gray-900">
+                      {m.group.product.name}
+                      {m.seatLabel ? (
+                        <span className="ml-2 text-sm font-normal text-blue-600">· {m.seatLabel}</span>
+                      ) : null}
+                    </h3>
+                    {m.notes && (
+                      <p className="text-sm text-red-700 mt-1">
+                        Review: <strong>{m.notes}</strong>
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-500 mt-1">
+                      You may apply again from the available groups page.
+                    </p>
+                  </div>
+                  <span className="text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 font-medium">
+                    REJECTED
+                  </span>
+                </div>
+              </div>
             ))}
           </div>
         </div>

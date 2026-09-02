@@ -1,6 +1,8 @@
 import { GROUP_STATUS_TRANSITIONS, isValidTransition } from '@chitfund/shared';
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
+import * as audit from './audit.service';
+import { getCollectionTrend } from './analytics.service';
 
 /** Statuses that occupy a seat in the group. */
 const OCCUPYING_STATUSES = [
@@ -228,6 +230,7 @@ export async function getMonthOverview(orgId: string, groupId: string) {
         const pending = inst.payments.filter((p) => p.status === 'PENDING');
         const paidDate = verified[0]?.paymentDate || verified[0]?.verifiedAt || null;
         return {
+          installmentId: inst.id,
           memberId: inst.memberId,
           customerId: inst.member.customerId,
           ticketNumber: inst.member.ticketNumber,
@@ -273,7 +276,12 @@ export async function getMonthOverview(orgId: string, groupId: string) {
   };
 }
 
-export async function updateStatus(orgId: string, id: string, newStatus: string) {
+export async function updateStatus(
+  orgId: string,
+  id: string,
+  newStatus: string,
+  performedById?: string,
+) {
   const group = await prisma.chitGroup.findFirst({ where: { id, orgId } });
   if (!group) throw new ApiError(404, 'Group not found');
 
@@ -296,7 +304,9 @@ export async function updateStatus(orgId: string, id: string, newStatus: string)
     }
   }
 
-  return prisma.chitGroup.update({
+  const previousStatus = group.status;
+
+  const result = await prisma.chitGroup.update({
     where: { id },
     data: {
       status: newStatus as any,
@@ -306,6 +316,19 @@ export async function updateStatus(orgId: string, id: string, newStatus: string)
       version: { increment: 1 },
     },
   });
+
+  if (performedById) {
+    void audit.logAction({
+      action: 'GROUP_STATUS_CHANGED',
+      entityType: 'ChitGroup',
+      entityId: id,
+      actorId: performedById,
+      orgId,
+      changes: { from: previousStatus, to: newStatus },
+    }).catch(() => {});
+  }
+
+  return result;
 }
 
 export async function getAvailable(orgId: string) {
@@ -377,7 +400,16 @@ export async function getDashboardStats(orgId: string) {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [activeGroups, totalCustomers, collectedThisMonth] = await Promise.all([
+  const [
+    activeGroups,
+    totalCustomers,
+    collectedThisMonth,
+    pendingPayments,
+    overdueInstallments,
+    defaultingMembers,
+    newCustomersThisMonth,
+    collectionTrend,
+  ] = await Promise.all([
     prisma.chitGroup.count({ where: { orgId, status: 'ACTIVE' } }),
     prisma.customer.count({ where: { orgId } }),
     prisma.payment.aggregate({
@@ -388,11 +420,41 @@ export async function getDashboardStats(orgId: string) {
       },
       _sum: { amountPaise: true },
     }),
+    prisma.payment.count({
+      where: {
+        status: 'PENDING',
+        installment: { group: { orgId } },
+      },
+    }),
+    prisma.installment.count({
+      where: {
+        status: 'OVERDUE',
+        group: { orgId },
+      },
+    }),
+    prisma.groupMember.count({
+      where: {
+        status: 'DEFAULTING',
+        group: { orgId },
+      },
+    }),
+    prisma.customer.count({
+      where: {
+        orgId,
+        createdAt: { gte: startOfMonth },
+      },
+    }),
+    getCollectionTrend(orgId),
   ]);
 
   return {
     activeGroups,
     totalCustomers,
     collectedThisMonth: collectedThisMonth._sum.amountPaise || BigInt(0),
+    pendingPayments,
+    overdueInstallments,
+    defaultingMembers,
+    newCustomersThisMonth,
+    collectionTrend,
   };
 }
