@@ -8,6 +8,25 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import Link from 'next/link';
 import { useState } from 'react';
 
+function getMonthLabel(startDate: string | Date, monthNumber: number): string {
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const d = new Date(startDate);
+  const idx = (d.getMonth() + monthNumber - 1) % 12;
+  const year = d.getFullYear() + Math.floor((d.getMonth() + monthNumber - 1) / 12);
+  return `M${monthNumber}-${MONTHS[idx]} ${year}`;
+}
+
+function computeEffectiveStatus(dbStatus: string, dueDate: string | Date): string {
+  if (dbStatus === 'PAID' || dbStatus === 'WAIVED' || dbStatus === 'PARTIALLY_PAID') return dbStatus;
+  const today = new Date();
+  const due = new Date(dueDate);
+  const todayMonth = today.getFullYear() * 12 + today.getMonth();
+  const dueMonth = due.getFullYear() * 12 + due.getMonth();
+  if (dueMonth > todayMonth) return 'UPCOMING';
+  if (dueMonth === todayMonth) return 'DUE';
+  return 'OVERDUE';
+}
+
 export default function CustomerDetailPage() {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -19,6 +38,10 @@ export default function CustomerDetailPage() {
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [notifyForm, setNotifyForm] = useState({ title: '', body: '', channel: 'IN_APP' });
+  const [markPaidTarget, setMarkPaidTarget] = useState<{
+    installmentId: string; balancePaise: number; name: string; monthLabel: string;
+  } | null>(null);
+  const [markPaidForm, setMarkPaidForm] = useState({ amount: '', method: 'CASH', date: new Date().toISOString().slice(0, 10), notes: '' });
 
   const { data: customer, isLoading } = useQuery({
     queryKey: ['admin-customer', id],
@@ -67,6 +90,16 @@ export default function CustomerDetailPage() {
     },
   });
 
+  const markPaidMutation = useMutation({
+    mutationFn: (payload: { installmentId: string; amountPaise: number; method: string; paymentDate: string; notes?: string }) =>
+      api.post('/payments/mark-paid', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-customer', id] });
+      setMarkPaidTarget(null);
+      setMarkPaidForm({ amount: '', method: 'CASH', date: new Date().toISOString().slice(0, 10), notes: '' });
+    },
+  });
+
   if (isLoading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
   if (!customer) return <div className="text-center py-12 text-gray-500">Customer not found</div>;
 
@@ -75,6 +108,13 @@ export default function CustomerDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Link href="/admin/customers" className="hover:text-blue-600 transition">← Customers</Link>
+        <span>/</span>
+        <span className="text-gray-800 font-medium">{customer.name}</span>
+      </div>
+
       <div className="bg-white rounded-xl border p-6">
         <div className="flex justify-between items-start gap-3">
           <div>
@@ -256,6 +296,79 @@ export default function CustomerDetailPage() {
         )}
       </div>
 
+      {/* Mark as Paid form */}
+      {markPaidTarget && (
+        <div className="bg-white rounded-xl border p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Mark as Paid — {markPaidTarget.name} · {markPaidTarget.monthLabel}
+            </h3>
+            <button onClick={() => setMarkPaidTarget(null)} className="text-gray-400 hover:text-gray-600 text-lg">&times;</button>
+          </div>
+          <p className="text-xs text-gray-500">
+            Outstanding: {formatCurrency(markPaidTarget.balancePaise)}
+          </p>
+          {markPaidMutation.isError && (
+            <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+              {(markPaidMutation.error as any)?.message || 'Failed'}
+            </div>
+          )}
+          <div className="grid sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Amount (₹)</label>
+              <input type="number" step="0.01" min="1"
+                value={markPaidForm.amount}
+                onChange={(e) => setMarkPaidForm({ ...markPaidForm, amount: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Method</label>
+              <select value={markPaidForm.method}
+                onChange={(e) => setMarkPaidForm({ ...markPaidForm, method: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="CASH">Cash</option>
+                <option value="UPI">UPI</option>
+                <option value="NEFT">NEFT</option>
+                <option value="CHEQUE">Cheque</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Date</label>
+              <input type="date" value={markPaidForm.date}
+                onChange={(e) => setMarkPaidForm({ ...markPaidForm, date: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Notes</label>
+              <input value={markPaidForm.notes}
+                onChange={(e) => setMarkPaidForm({ ...markPaidForm, notes: e.target.value })}
+                placeholder="Optional"
+                className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const amtRupees = parseFloat(markPaidForm.amount);
+                if (!amtRupees || amtRupees <= 0) return;
+                markPaidMutation.mutate({
+                  installmentId: markPaidTarget.installmentId,
+                  amountPaise: Math.round(amtRupees * 100),
+                  method: markPaidForm.method,
+                  paymentDate: markPaidForm.date,
+                  notes: markPaidForm.notes || undefined,
+                });
+              }}
+              disabled={markPaidMutation.isPending || !markPaidForm.amount}
+              className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50 hover:bg-blue-700"
+            >
+              {markPaidMutation.isPending ? 'Saving...' : 'Record Payment'}
+            </button>
+            <button onClick={() => setMarkPaidTarget(null)} className="px-4 py-2 border text-sm rounded-lg">Cancel</button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-800">
           Group Memberships ({memberships.length})
@@ -269,9 +382,13 @@ export default function CustomerDetailPage() {
           memberships.map((m: any) => {
             const isOpen = openGroup === m.id;
             const product = m.group?.product;
+            const groupStartDate = m.group?.startDate;
             const installments = m.installments || [];
             const paid = installments.filter((i: any) => i.status === 'PAID' || i.status === 'PARTIALLY_PAID');
-            const pending = installments.filter((i: any) => ['DUE', 'OVERDUE', 'UPCOMING'].includes(i.status));
+            const pending = installments.filter((i: any) => {
+              const eff = i.dueDate ? computeEffectiveStatus(i.status, i.dueDate) : i.status;
+              return ['DUE', 'OVERDUE'].includes(eff);
+            });
 
             return (
               <div key={m.id} className="bg-white rounded-xl border overflow-hidden">
@@ -290,6 +407,7 @@ export default function CustomerDetailPage() {
                       <p className="text-sm text-gray-500 mt-1">
                         {m.ticketNumber ? `Ticket #${m.ticketNumber}` : 'Pending ticket'}
                         {m.joinedAt && ` · Joined ${formatDate(m.joinedAt)}`}
+                        {groupStartDate && ` · Started ${formatDate(groupStartDate)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -319,7 +437,7 @@ export default function CustomerDetailPage() {
                       <span className="text-gray-500">Lift status</span>
                       <p className="font-medium">
                         {m.liftInfo
-                          ? `Month ${m.liftInfo.prizedMonth}${m.liftInfo.prizedAt ? ` (${formatDate(m.liftInfo.prizedAt)})` : ''}`
+                          ? `${groupStartDate ? getMonthLabel(groupStartDate, m.liftInfo.prizedMonth) : `Month ${m.liftInfo.prizedMonth}`}${m.liftInfo.prizedAt ? ` (${formatDate(m.liftInfo.prizedAt)})` : ''}`
                           : 'Not lifted'}
                       </p>
                     </div>
@@ -331,7 +449,7 @@ export default function CustomerDetailPage() {
                     {m.liftInfo && (
                       <div className="mt-4 p-4 bg-green-50 rounded-lg text-sm text-green-800">
                         <p>
-                          Lifted in <strong>month {m.liftInfo.prizedMonth}</strong>
+                          Lifted in <strong>{groupStartDate ? getMonthLabel(groupStartDate, m.liftInfo.prizedMonth) : `month ${m.liftInfo.prizedMonth}`}</strong>
                           {m.liftInfo.prizedAt && <> on {formatDate(m.liftInfo.prizedAt)}</>}.
                           {' '}EMI changed from {formatCurrency(m.emiBeforeLiftPaise)} → {formatCurrency(m.emiAfterLiftPaise)}.
                           {m.liftInfo.schedulePayoutPaise && (
@@ -344,7 +462,6 @@ export default function CustomerDetailPage() {
                       </div>
                     )}
 
-                    {/* Monthly payout schedule for this product */}
                     {product?.payoutSchedule?.length > 0 && (
                       <div>
                         <h3 className="text-sm font-semibold text-gray-700 mb-2">Payout if lifted in each month</h3>
@@ -354,7 +471,7 @@ export default function CustomerDetailPage() {
                               className={`rounded px-2 py-1.5 ${
                                 m.prizedMonth === s.monthNumber ? 'bg-green-100 border border-green-300' : 'bg-gray-50'
                               }`}>
-                              <span className="text-gray-500">M{s.monthNumber}</span>
+                              <span className="text-gray-500">{groupStartDate ? getMonthLabel(groupStartDate, s.monthNumber) : `M${s.monthNumber}`}</span>
                               <p className="font-medium">{formatCurrency(s.payoutAmountPaise)}</p>
                             </div>
                           ))}
@@ -362,10 +479,9 @@ export default function CustomerDetailPage() {
                       </div>
                     )}
 
-                    {/* Payment history */}
                     <div>
                       <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                        Payment history ({paid.length} paid · {pending.filter((i: any) => i.status !== 'UPCOMING').length} pending)
+                        Payment history ({paid.length} paid · {pending.length} due/overdue)
                       </h3>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -376,14 +492,20 @@ export default function CustomerDetailPage() {
                               <th className="pb-2 font-medium">Paid</th>
                               <th className="pb-2 font-medium">Paid On</th>
                               <th className="pb-2 font-medium">Status</th>
+                              {canManage && <th className="pb-2 font-medium text-right">Action</th>}
                             </tr>
                           </thead>
                           <tbody>
                             {installments.map((inst: any) => {
                               const verified = (inst.payments || []).find((p: any) => p.status === 'VERIFIED');
+                              const effectiveStatus = inst.dueDate ? computeEffectiveStatus(inst.status, inst.dueDate) : inst.status;
+                              const label = groupStartDate ? getMonthLabel(groupStartDate, inst.monthNumber) : `Month ${inst.monthNumber}`;
                               return (
                                 <tr key={inst.id} className="border-b last:border-0">
-                                  <td className="py-2">Month {inst.monthNumber}</td>
+                                  <td className="py-2">
+                                    <span className="font-medium">{label}</span>
+                                    <span className="text-gray-400 ml-1 text-xs">(M{inst.monthNumber})</span>
+                                  </td>
                                   <td className="py-2">{formatCurrency(inst.netAmountPaise)}</td>
                                   <td className="py-2">{formatCurrency(inst.paidAmountPaise)}</td>
                                   <td className="py-2 text-gray-500">
@@ -395,17 +517,43 @@ export default function CustomerDetailPage() {
                                   </td>
                                   <td className="py-2">
                                     <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                      inst.status === 'PAID' ? 'bg-green-100 text-green-700'
-                                        : inst.status === 'OVERDUE' ? 'bg-red-100 text-red-700'
-                                        : inst.status === 'DUE' ? 'bg-amber-100 text-amber-700'
+                                      effectiveStatus === 'PAID' ? 'bg-green-100 text-green-700'
+                                        : effectiveStatus === 'OVERDUE' ? 'bg-red-100 text-red-700'
+                                        : effectiveStatus === 'DUE' ? 'bg-amber-100 text-amber-700'
+                                        : effectiveStatus === 'PARTIALLY_PAID' ? 'bg-blue-100 text-blue-700'
                                         : 'bg-gray-100 text-gray-600'
-                                    }`}>{inst.status}</span>
+                                    }`}>{effectiveStatus}</span>
                                   </td>
+                                  {canManage && (
+                                    <td className="py-2 text-right">
+                                      {effectiveStatus !== 'PAID' && effectiveStatus !== 'WAIVED' && effectiveStatus !== 'UPCOMING' && (
+                                        <button
+                                          onClick={() => {
+                                            setMarkPaidTarget({
+                                              installmentId: inst.id,
+                                              balancePaise: Number(inst.balancePaise || inst.netAmountPaise),
+                                              name: customer.name,
+                                              monthLabel: label,
+                                            });
+                                            setMarkPaidForm({
+                                              amount: String(Number(inst.balancePaise || inst.netAmountPaise) / 100),
+                                              method: 'CASH',
+                                              date: new Date().toISOString().slice(0, 10),
+                                              notes: '',
+                                            });
+                                          }}
+                                          className="px-2 py-1 border border-blue-300 text-blue-700 text-xs rounded hover:bg-blue-50"
+                                        >
+                                          Mark Paid
+                                        </button>
+                                      )}
+                                    </td>
+                                  )}
                                 </tr>
                               );
                             })}
                             {installments.length === 0 && (
-                              <tr><td colSpan={5} className="py-3 text-gray-500">No installment schedule yet.</td></tr>
+                              <tr><td colSpan={canManage ? 6 : 5} className="py-3 text-gray-500">No installment schedule yet.</td></tr>
                             )}
                           </tbody>
                         </table>

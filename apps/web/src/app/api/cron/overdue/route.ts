@@ -12,10 +12,18 @@ export async function GET(request: NextRequest) {
 
     const now = new Date();
 
-    const overdueResult = await prisma.installment.updateMany({
+    const upcomingToDue = await prisma.installment.updateMany({
+      where: {
+        status: 'UPCOMING',
+        dueDate: { lte: now },
+      },
+      data: { status: 'DUE' },
+    });
+
+    const dueToOverdue = await prisma.installment.updateMany({
       where: {
         status: 'DUE',
-        dueDate: { lt: now },
+        dueDate: { lt: new Date(now.getFullYear(), now.getMonth(), 1) },
       },
       data: { status: 'OVERDUE' },
     });
@@ -48,7 +56,8 @@ export async function GET(request: NextRequest) {
 
     return json({
       message: 'Overdue check complete',
-      overdueMarked: overdueResult.count,
+      upcomingToDue: upcomingToDue.count,
+      dueToOverdue: dueToOverdue.count,
       defaultingMarked: defaultingUpdated,
       timestamp: now.toISOString(),
     });

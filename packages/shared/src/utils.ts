@@ -38,6 +38,36 @@ export function calculateDueDate(startDate: Date, monthOffset: number): Date {
   return date;
 }
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export function getMonthLabel(startDate: Date | string, monthNumber: number, short = true): string {
+  const d = typeof startDate === 'string' ? new Date(startDate) : new Date(startDate);
+  const monthIndex = (d.getMonth() + monthNumber - 1) % 12;
+  const year = d.getFullYear() + Math.floor((d.getMonth() + monthNumber - 1) / 12);
+  const names = short ? MONTH_NAMES : MONTH_NAMES_FULL;
+  return `M${monthNumber}-${names[monthIndex]} ${year}`;
+}
+
+export function computeEffectiveStatus(
+  dbStatus: string,
+  dueDate: Date | string,
+  now?: Date,
+): string {
+  if (dbStatus === 'PAID' || dbStatus === 'WAIVED') return dbStatus;
+  if (dbStatus === 'PARTIALLY_PAID') return dbStatus;
+
+  const today = now || new Date();
+  const due = typeof dueDate === 'string' ? new Date(dueDate) : new Date(dueDate);
+
+  const todayMonth = today.getFullYear() * 12 + today.getMonth();
+  const dueMonth = due.getFullYear() * 12 + due.getMonth();
+
+  if (dueMonth > todayMonth) return 'UPCOMING';
+  if (dueMonth === todayMonth) return 'DUE';
+  return 'OVERDUE';
+}
+
 export function calculateDividend(
   discountPaise: bigint,
   commissionPaise: bigint,

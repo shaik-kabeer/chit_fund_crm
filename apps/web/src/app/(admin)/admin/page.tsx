@@ -90,22 +90,22 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-5 border">
+        <Link href="/admin/groups" className="bg-white rounded-xl p-5 border hover:border-blue-300 transition">
           <p className="text-sm text-gray-500">Active Groups</p>
           <p className="text-3xl font-bold text-blue-600 mt-1">{stats?.activeGroups || 0}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border">
+        </Link>
+        <Link href="/admin/customers" className="bg-white rounded-xl p-5 border hover:border-blue-300 transition">
           <p className="text-sm text-gray-500">Total Customers</p>
           <p className="text-3xl font-bold text-gray-800 mt-1">{stats?.totalCustomers || 0}</p>
-        </div>
+        </Link>
         <div className="bg-white rounded-xl p-5 border">
           <p className="text-sm text-gray-500">Collected This Month</p>
           <p className="text-3xl font-bold text-green-600 mt-1">{formatCurrency(stats?.collectedThisMonth || 0)}</p>
         </div>
-        <div className="bg-white rounded-xl p-5 border">
+        <Link href="/admin/payments" className="bg-white rounded-xl p-5 border hover:border-amber-300 transition">
           <p className="text-sm text-gray-500">Pending Payments</p>
           <p className="text-3xl font-bold text-amber-500 mt-1">{stats?.pendingPayments || 0}</p>
-        </div>
+        </Link>
         <div className="bg-white rounded-xl p-5 border">
           <p className="text-sm text-gray-500">Overdue Installments</p>
           <p className="text-3xl font-bold text-red-600 mt-1">{stats?.overdueInstallments || 0}</p>
@@ -114,14 +114,14 @@ export default function AdminDashboard() {
           <p className="text-sm text-gray-500">Defaulting Members</p>
           <p className="text-3xl font-bold text-red-500 mt-1">{stats?.defaultingMembers || 0}</p>
         </div>
-        <div className="bg-white rounded-xl p-5 border">
+        <Link href="/admin/customers" className="bg-white rounded-xl p-5 border hover:border-indigo-300 transition">
           <p className="text-sm text-gray-500">New Members This Month</p>
           <p className="text-3xl font-bold text-indigo-600 mt-1">{stats?.newCustomersThisMonth || 0}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border">
+        </Link>
+        <Link href="/admin/payments" className="bg-white rounded-xl p-5 border hover:border-amber-300 transition">
           <p className="text-sm text-gray-500">Pending Verifications</p>
           <p className="text-3xl font-bold text-amber-500 mt-1">{pendingPayments?.meta?.total || 0}</p>
-        </div>
+        </Link>
       </div>
 
       {/* Charts */}

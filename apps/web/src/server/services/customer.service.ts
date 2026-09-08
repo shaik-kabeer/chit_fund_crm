@@ -18,9 +18,9 @@ export async function createByAdmin(
   if (existing) throw new ApiError(409, 'A member with this phone number already exists');
 
   const temporaryPassword = data.password?.trim()
-    || `Stash@${randomBytes(4).toString('hex')}`;
+    || `${phone}@123`;
   if (temporaryPassword.length < 8) {
-    throw new ApiError(400, 'Temporary password must contain at least 8 characters');
+    throw new ApiError(400, 'Password must contain at least 8 characters');
   }
 
   const customer = await prisma.customer.create({

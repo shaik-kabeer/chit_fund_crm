@@ -12,6 +12,7 @@ const navItems = [
   { href: '/admin/customers', label: 'Customers' },
   { href: '/admin/payments', label: 'Payments' },
   { href: '/admin/audit', label: 'Activity Log', roles: ['SUPER_ADMIN'] },
+  { href: '/admin/ai-agent', label: 'AI Agent', roles: ['SUPER_ADMIN'] },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
       </header>
       <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
+      {user.role === 'SUPER_ADMIN' && !pathname.startsWith('/admin/ai-agent') && (
+        <Link
+          href="/admin/ai-agent"
+          className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-300 flex items-center justify-center hover:bg-blue-700 hover:scale-110 transition-all z-50"
+          title="AI Agent"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </Link>
+      )}
     </div>
   );
 }

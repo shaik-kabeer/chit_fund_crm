@@ -1,4 +1,5 @@
 import { GROUP_STATUS_TRANSITIONS, isValidTransition } from '@chitfund/shared';
+import { getMonthLabel, computeEffectiveStatus } from '@chitfund/shared';
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
 import * as audit from './audit.service';
@@ -203,14 +204,17 @@ export async function getMonthOverview(orgId: string, groupId: string) {
 
   const tenure = group.product.tenureMonths;
   const months = [];
+  const now = new Date();
 
   for (let m = 1; m <= tenure; m++) {
     const schedule = group.product.payoutSchedule.find((s) => s.monthNumber === m);
     const liftedMember = group.members.find((mem) => mem.prizedMonth === m);
     const monthInstallments = installments.filter((i) => i.monthNumber === m);
+    const monthLabel = getMonthLabel(group.startDate, m);
 
     months.push({
       monthNumber: m,
+      monthLabel,
       scheduledPayoutPaise: schedule?.payoutAmountPaise ?? group.product.payoutAmountPaise,
       isCurrent: group.currentMonth === m,
       isPast: group.currentMonth > m,
@@ -229,6 +233,7 @@ export async function getMonthOverview(orgId: string, groupId: string) {
         const verified = inst.payments.filter((p) => p.status === 'VERIFIED');
         const pending = inst.payments.filter((p) => p.status === 'PENDING');
         const paidDate = verified[0]?.paymentDate || verified[0]?.verifiedAt || null;
+        const effectiveStatus = computeEffectiveStatus(inst.status, inst.dueDate, now);
         return {
           installmentId: inst.id,
           memberId: inst.memberId,
@@ -237,7 +242,7 @@ export async function getMonthOverview(orgId: string, groupId: string) {
           seatLabel: inst.member.seatLabel,
           name: inst.member.customer.name,
           phone: inst.member.customer.phone,
-          installmentStatus: inst.status,
+          installmentStatus: effectiveStatus,
           dueAmountPaise: inst.netAmountPaise,
           paidAmountPaise: inst.paidAmountPaise,
           balancePaise: inst.balancePaise,

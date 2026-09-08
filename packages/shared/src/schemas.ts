@@ -108,7 +108,7 @@ export type UpdateGroupStatusInput = z.infer<typeof updateGroupStatusSchema>;
 export const createCustomerSchema = z.object({
   phone: z.string().min(10).max(15),
   email: z.string().email().optional(),
-  password: z.string().min(8),
+  password: z.string().min(8).optional(),
   name: z.string().min(2).max(255),
   fatherName: z.string().max(255).optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

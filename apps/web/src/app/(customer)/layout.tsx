@@ -58,12 +58,12 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
             <button onClick={logout} className="text-sm text-red-500 hover:text-red-700">Logout</button>
           </div>
         </div>
-        <nav className="max-w-5xl mx-auto px-4 flex gap-1 -mb-px">
+        <nav className="max-w-5xl mx-auto px-4 flex gap-1 -mb-px overflow-x-auto scrollbar-hide">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition whitespace-nowrap ${
                 pathname.startsWith(item.href)
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'

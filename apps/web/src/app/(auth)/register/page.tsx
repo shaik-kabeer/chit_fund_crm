@@ -74,7 +74,7 @@ export default function RegisterPage() {
             error={errors.email?.message}
             {...register('email')}
           />
-          <Field label="Password" type="password" error={errors.password?.message} {...register('password')} />
+          <Field label="Password" type="password" error={errors.password?.message} {...register('password')} hint="At least 8 characters" />
           <Field
             label="Confirm password"
             type="password"
@@ -104,11 +104,13 @@ function Field({
   label,
   type = 'text',
   error,
+  hint,
   ...inputProps
 }: {
   label: string;
   type?: string;
   error?: string;
+  hint?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="block">
@@ -118,6 +120,7 @@ function Field({
         className="w-full rounded-lg border px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
         {...inputProps}
       />
+      {hint && !error && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </label>
   );

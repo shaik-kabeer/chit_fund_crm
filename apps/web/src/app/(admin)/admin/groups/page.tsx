@@ -45,8 +45,8 @@ export default function AdminGroupsPage() {
   });
 
   const { data: products } = useQuery({
-    queryKey: ['products'],
-    queryFn: () => api.get<any[]>('/products'),
+    queryKey: ['products', 'all'],
+    queryFn: () => api.get<any[]>('/products?includeInactive=true'),
   });
 
   const createMutation = useMutation({
@@ -93,11 +93,12 @@ export default function AdminGroupsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Product *</label>
               <select
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                size={Math.min((products?.length || 0) + 1, 8)}
                 {...register('productId')}
               >
                 <option value="">Select product</option>
                 {products?.map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.name} ({formatCurrency(p.chitValuePaise)})</option>
+                  <option key={p.id} value={p.id}>{p.name} — {formatCurrency(p.chitValuePaise)} ({p.memberCount} members, {p.tenureMonths} months){p.isActive === false ? ' [INACTIVE]' : ''}</option>
                 ))}
               </select>
               {errors.productId && (
