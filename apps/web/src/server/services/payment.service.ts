@@ -1,5 +1,6 @@
 import { ApiError } from '../http';
 import { prisma } from '../prisma';
+import { getMonthLabel } from '@chitfund/shared';
 import * as audit from './audit.service';
 import * as notifications from './notification.service';
 
@@ -128,14 +129,37 @@ export async function submitPayment(data: {
 }
 
 export async function verifyPayment(paymentId: string, verifiedById: string, orgId: string) {
-  const payment = await prisma.payment.findFirst({
+  const paymentWithRelations = await prisma.payment.findFirst({
     where: { id: paymentId, installment: { group: { orgId } } },
-    include: { installment: { include: { member: true } } },
+    include: {
+      installment: {
+        include: {
+          member: {
+            include: {
+              customer: { select: { id: true, name: true, phone: true } },
+              group: {
+                select: {
+                  groupNumber: true,
+                  startDate: true,
+                  currentMonth: true,
+                  totalSeats: true,
+                  product: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
-  if (!payment) throw new ApiError(404, 'Payment not found');
-  if (payment.status !== 'PENDING') {
+  if (!paymentWithRelations) throw new ApiError(404, 'Payment not found');
+  if (paymentWithRelations.status !== 'PENDING') {
     throw new ApiError(400, 'Payment is not in pending state');
   }
+
+  const { installment } = paymentWithRelations;
+  const { member } = installment;
+  const { customer, group } = member;
 
   await prisma.$transaction(async (tx) => {
     await tx.payment.update({
@@ -143,12 +167,12 @@ export async function verifyPayment(paymentId: string, verifiedById: string, org
       data: { status: 'VERIFIED', verifiedById, verifiedAt: new Date() },
     });
 
-    const newPaid = payment.installment.paidAmountPaise + payment.amountPaise;
-    const newBalance = payment.installment.netAmountPaise - newPaid;
+    const newPaid = installment.paidAmountPaise + paymentWithRelations.amountPaise;
+    const newBalance = installment.netAmountPaise - newPaid;
     const fullyPaid = newBalance <= BigInt(0);
 
     await tx.installment.update({
-      where: { id: payment.installmentId },
+      where: { id: paymentWithRelations.installmentId },
       data: {
         paidAmountPaise: newPaid,
         balancePaise: newBalance < BigInt(0) ? BigInt(0) : newBalance,
@@ -158,26 +182,26 @@ export async function verifyPayment(paymentId: string, verifiedById: string, org
     });
 
     await tx.groupMember.update({
-      where: { id: payment.installment.memberId },
-      data: { totalPaidPaise: { increment: payment.amountPaise } },
+      where: { id: installment.memberId },
+      data: { totalPaidPaise: { increment: paymentWithRelations.amountPaise } },
     });
 
     await tx.chitGroup.update({
-      where: { id: payment.installment.groupId },
-      data: { totalCollectedPaise: { increment: payment.amountPaise } },
+      where: { id: installment.groupId },
+      data: { totalCollectedPaise: { increment: paymentWithRelations.amountPaise } },
     });
 
     await tx.ledgerEntry.create({
       data: {
-        groupId: payment.installment.groupId,
+        groupId: installment.groupId,
         entryDate: new Date(),
-        narration: `Payment received - Receipt #${payment.receiptNumber} (${payment.method})`,
+        narration: `Payment received - Receipt #${paymentWithRelations.receiptNumber} (${paymentWithRelations.method})`,
         entryType: 'CREDIT',
-        amountPaise: payment.amountPaise,
+        amountPaise: paymentWithRelations.amountPaise,
         accountHead: 'COLLECTION',
         refType: 'payment',
         refId: paymentId,
-        memberId: payment.installment.memberId,
+        memberId: installment.memberId,
         createdBy: verifiedById,
       },
     });
@@ -189,16 +213,24 @@ export async function verifyPayment(paymentId: string, verifiedById: string, org
     entityId: paymentId,
     actorId: verifiedById,
     orgId,
-    changes: { receiptNumber: payment.receiptNumber, amountPaise: payment.amountPaise.toString() },
+    changes: { receiptNumber: paymentWithRelations.receiptNumber, amountPaise: paymentWithRelations.amountPaise.toString() },
   }).catch(() => {});
 
-  void notifications.send({
-    recipientType: 'customer',
-    recipientId: payment.installment.member.customerId,
-    customerId: payment.installment.member.customerId,
-    title: 'Payment Verified',
-    body: `Your payment of ₹${Number(payment.amountPaise) / 100} (Receipt: ${payment.receiptNumber}) has been verified successfully.`,
-    data: { paymentId, type: 'PAYMENT_VERIFIED' },
+  void notifications.notifyPaymentReceived({
+    customerId: customer.id,
+    customerName: customer.name,
+    customerPhone: customer.phone,
+    amountPaise: Number(paymentWithRelations.amountPaise),
+    groupName: group.product.name,
+    groupNumber: group.groupNumber,
+    monthLabel: getMonthLabel(group.startDate, installment.monthNumber),
+    monthNumber: installment.monthNumber,
+    receiptNumber: paymentWithRelations.receiptNumber,
+    paymentDate: paymentWithRelations.paymentDate,
+    currentMonth: group.currentMonth,
+    totalSeats: group.totalSeats,
+    remainingBalancePaise: Math.max(Number(installment.netAmountPaise - (installment.paidAmountPaise + paymentWithRelations.amountPaise)), 0),
+    startDate: group.startDate,
   }).catch(() => {});
 
   return { message: 'Payment verified and marked as received' };
@@ -313,9 +345,27 @@ export async function markAsPaid(data: {
 
   const installment = await prisma.installment.findFirst({
     where: { id: data.installmentId, group: { orgId: data.orgId } },
-    include: { member: true },
+    include: {
+      member: {
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          group: {
+            select: {
+              groupNumber: true,
+              startDate: true,
+              currentMonth: true,
+              totalSeats: true,
+              product: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
   });
   if (!installment) throw new ApiError(404, 'Installment not found');
+
+  const { member } = installment;
+  const { customer, group } = member;
 
   if (installment.status === 'PAID' || installment.status === 'WAIVED') {
     throw new ApiError(400, 'Installment already settled');
@@ -328,7 +378,7 @@ export async function markAsPaid(data: {
     );
   }
 
-  const receiptNumber = await generateReceiptNumber(installment.member.groupId);
+  const receiptNumber = await generateReceiptNumber(member.groupId);
   const paymentDate = data.paymentDate ? new Date(data.paymentDate) : new Date();
 
   const payment = await prisma.$transaction(async (tx) => {
@@ -396,6 +446,25 @@ export async function markAsPaid(data: {
     actorId: data.collectedById,
     orgId: data.orgId,
     changes: { receiptNumber, amountPaise: data.amountPaise, method, notes: data.notes },
+  }).catch(() => {});
+
+  // Send payment received notification to customer
+  const newBalance = installment.netAmountPaise - (installment.paidAmountPaise + BigInt(data.amountPaise));
+  void notifications.notifyPaymentReceived({
+    customerId: customer.id,
+    customerName: customer.name,
+    customerPhone: customer.phone,
+    amountPaise: data.amountPaise,
+    groupName: group.product.name,
+    groupNumber: group.groupNumber,
+    monthLabel: getMonthLabel(group.startDate, installment.monthNumber),
+    monthNumber: installment.monthNumber,
+    receiptNumber,
+    paymentDate,
+    currentMonth: group.currentMonth,
+    totalSeats: group.totalSeats,
+    remainingBalancePaise: Math.max(Number(newBalance), 0),
+    startDate: group.startDate,
   }).catch(() => {});
 
   return {

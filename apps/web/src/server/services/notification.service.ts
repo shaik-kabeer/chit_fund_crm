@@ -1,5 +1,7 @@
 import { prisma } from '../prisma';
 import { ApiError } from '../http';
+import { getMonthLabel } from '@chitfund/shared';
+import * as whatsapp from './whatsapp.service';
 
 type NotificationChannel = 'IN_APP' | 'SMS' | 'WHATSAPP' | 'EMAIL' | 'PUSH';
 
@@ -16,11 +18,25 @@ interface SendNotificationParams {
 /**
  * Create and queue a notification.
  * IN_APP notifications are immediately marked SENT.
- * SMS/WHATSAPP/EMAIL are QUEUED for external provider dispatch.
+ * WHATSAPP: attempts delivery via WhatsApp Cloud API, falls back to QUEUED.
+ * SMS/EMAIL are QUEUED for external provider dispatch.
  */
 export async function send(params: SendNotificationParams) {
   const channel = params.channel || 'IN_APP';
-  const status = channel === 'IN_APP' ? 'SENT' : 'QUEUED';
+  let status = channel === 'IN_APP' ? 'SENT' : 'QUEUED';
+
+  // Attempt WhatsApp delivery if channel is WHATSAPP
+  let whatsappMessageId: string | undefined;
+  if (channel === 'WHATSAPP' && params.data?.phone) {
+    const result = await whatsapp.sendText({
+      to: params.data.phone as string,
+      text: params.body,
+    });
+    if (result.success) {
+      status = 'DELIVERED';
+      whatsappMessageId = result.messageId;
+    }
+  }
 
   return prisma.notification.create({
     data: {
@@ -30,9 +46,9 @@ export async function send(params: SendNotificationParams) {
       channel,
       title: params.title,
       body: params.body,
-      data: params.data ? JSON.parse(JSON.stringify(params.data)) : undefined,
-      status,
-      sentAt: status === 'SENT' ? new Date() : undefined,
+      data: params.data ? JSON.parse(JSON.stringify({ ...params.data, whatsappMessageId })) : undefined,
+      status: status as any,
+      sentAt: status !== 'QUEUED' ? new Date() : undefined,
     },
   });
 }
@@ -288,4 +304,325 @@ export async function sendAutomatedPaymentReminders() {
 
   await Promise.allSettled(createPromises);
   return { sent };
+}
+
+/**
+ * Send notification when a payment is received / marked as paid.
+ * Includes: amount, group name, month, receipt number, date, current month cycle, balance.
+ */
+export async function notifyPaymentReceived(params: {
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  amountPaise: number;
+  groupName: string;
+  groupNumber: string;
+  monthLabel: string;
+  monthNumber: number;
+  receiptNumber: string;
+  paymentDate: Date;
+  currentMonth: number;
+  totalSeats: number;
+  remainingBalancePaise: number;
+  startDate: Date;
+  channel?: NotificationChannel;
+}) {
+  const amt = params.amountPaise / 100;
+  const balance = params.remainingBalancePaise / 100;
+  const dateStr = params.paymentDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const currentMonthLabel = getMonthLabel(params.startDate, params.currentMonth);
+
+  const body = [
+    `✅ Payment Received`,
+    `Dear ${params.customerName},`,
+    `Amount: ₹${amt.toLocaleString('en-IN')}`,
+    `Group: ${params.groupName} (${params.groupNumber})`,
+    `Month: ${params.monthLabel}`,
+    `Receipt: ${params.receiptNumber}`,
+    `Date: ${dateStr}`,
+    `Current Cycle: ${currentMonthLabel} (${params.currentMonth}/${params.totalSeats})`,
+    balance > 0 ? `Remaining Balance: ₹${balance.toLocaleString('en-IN')}` : `Status: Fully Paid ✅`,
+    `Thank you for your payment!`,
+  ].join('\n');
+
+  const promises: Promise<unknown>[] = [];
+
+  promises.push(send({
+    recipientType: 'customer',
+    recipientId: params.customerId,
+    customerId: params.customerId,
+    channel: 'IN_APP',
+    title: '✅ Payment Received',
+    body,
+    data: {
+      type: 'PAYMENT_RECEIVED',
+      amountPaise: params.amountPaise,
+      groupNumber: params.groupNumber,
+      monthNumber: params.monthNumber,
+      receiptNumber: params.receiptNumber,
+    },
+  }));
+
+  if (params.channel === 'WHATSAPP' || whatsapp.isConfigured()) {
+    promises.push(
+      whatsapp.sendPaymentConfirmation(
+        params.customerPhone,
+        params.customerName,
+        amt,
+        `${params.groupName} (${params.groupNumber})`,
+        params.monthLabel,
+        params.receiptNumber,
+      ).then(async (res) => {
+        if (!res.success) {
+          await whatsapp.sendText({ to: params.customerPhone, text: body });
+        }
+      }).catch(() => {}),
+    );
+  }
+
+  await Promise.allSettled(promises);
+}
+
+/**
+ * Send notification when a member lifts the chit (wins the auction).
+ * Includes: payout amount, group, month, deductions.
+ */
+export async function notifyLiftStatus(params: {
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  payoutAmountPaise: number;
+  groupName: string;
+  groupNumber: string;
+  monthLabel: string;
+  monthNumber: number;
+  startDate: Date;
+  currentMonth: number;
+  totalSeats: number;
+  channel?: NotificationChannel;
+}) {
+  const payout = params.payoutAmountPaise / 100;
+  const currentMonthLabel = getMonthLabel(params.startDate, params.currentMonth);
+
+  const body = [
+    `🎉 Congratulations! You lifted the chit!`,
+    `Dear ${params.customerName},`,
+    `Payout Amount: ₹${payout.toLocaleString('en-IN')}`,
+    `Group: ${params.groupName} (${params.groupNumber})`,
+    `Lift Month: ${params.monthLabel}`,
+    `Current Cycle: ${currentMonthLabel} (${params.currentMonth}/${params.totalSeats})`,
+    `The payout will be processed to your registered bank account.`,
+  ].join('\n');
+
+  const promises: Promise<unknown>[] = [];
+
+  promises.push(send({
+    recipientType: 'customer',
+    recipientId: params.customerId,
+    customerId: params.customerId,
+    channel: 'IN_APP',
+    title: '🎉 Chit Lifted!',
+    body,
+    data: {
+      type: 'LIFT_NOTIFICATION',
+      payoutAmountPaise: params.payoutAmountPaise,
+      groupNumber: params.groupNumber,
+      monthNumber: params.monthNumber,
+    },
+  }));
+
+  if (params.channel === 'WHATSAPP' || whatsapp.isConfigured()) {
+    promises.push(
+      whatsapp.sendLiftNotification(
+        params.customerPhone,
+        params.customerName,
+        payout,
+        `${params.groupName} (${params.groupNumber})`,
+        params.monthLabel,
+      ).catch(() => {}),
+    );
+  }
+
+  await Promise.allSettled(promises);
+}
+
+/**
+ * Notify ALL overdue members across all groups (bulk "Notify All" button).
+ * Sends both IN_APP and WhatsApp (if configured).
+ */
+export async function notifyAllOverdue(orgId: string) {
+  const now = new Date();
+
+  const unpaidInstallments = await prisma.installment.findMany({
+    where: {
+      status: { in: ['DUE', 'OVERDUE', 'PARTIALLY_PAID'] },
+      dueDate: { lte: now },
+      group: { orgId, status: 'ACTIVE' },
+    },
+    include: {
+      member: {
+        include: {
+          customer: { select: { id: true, name: true, phone: true } },
+          group: {
+            select: {
+              groupNumber: true,
+              startDate: true,
+              currentMonth: true,
+              totalSeats: true,
+              product: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (unpaidInstallments.length === 0) return { sent: 0 };
+
+  const customerMap = new Map<string, {
+    name: string;
+    phone: string;
+    items: { group: string; monthLabel: string; balance: number }[];
+  }>();
+
+  for (const inst of unpaidInstallments) {
+    const custId = inst.member.customerId;
+    const startDate = inst.member.group.startDate;
+    const monthLabel = getMonthLabel(startDate, inst.monthNumber);
+
+    if (!customerMap.has(custId)) {
+      customerMap.set(custId, {
+        name: inst.member.customer.name,
+        phone: inst.member.customer.phone,
+        items: [],
+      });
+    }
+    customerMap.get(custId)!.items.push({
+      group: `${inst.member.group.product.name} (${inst.member.group.groupNumber})`,
+      monthLabel,
+      balance: Number(inst.balancePaise) / 100,
+    });
+  }
+
+  let sent = 0;
+  const promises: Promise<unknown>[] = [];
+
+  for (const [customerId, info] of customerMap) {
+    const totalDue = info.items.reduce((sum, i) => sum + i.balance, 0);
+    const details = info.items.map((i) => `• ${i.group} ${i.monthLabel}: ₹${i.balance.toLocaleString('en-IN')}`).join('\n');
+
+    const body = [
+      `⚠️ Payment Overdue Reminder`,
+      `Dear ${info.name},`,
+      `Total Due: ₹${totalDue.toLocaleString('en-IN')}`,
+      `Details:`,
+      details,
+      `Please pay at the earliest to avoid penalties.`,
+    ].join('\n');
+
+    promises.push(send({
+      recipientType: 'customer',
+      recipientId: customerId,
+      customerId,
+      channel: 'IN_APP',
+      title: '⚠️ Payment Overdue',
+      body,
+      data: { type: 'OVERDUE_REMINDER', totalDue, itemCount: info.items.length },
+    }));
+
+    if (whatsapp.isConfigured()) {
+      promises.push(
+        whatsapp.sendText({ to: info.phone, text: body }).catch(() => {}),
+      );
+    }
+
+    sent++;
+  }
+
+  await Promise.allSettled(promises);
+  return { sent, whatsappEnabled: whatsapp.isConfigured() };
+}
+
+/**
+ * Notify a single customer about their overdue payments.
+ */
+export async function notifyCustomerOverdue(customerId: string, orgId: string) {
+  const now = new Date();
+
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, orgId },
+    select: { id: true, name: true, phone: true },
+  });
+  if (!customer) throw new ApiError(404, 'Customer not found');
+
+  const unpaidInstallments = await prisma.installment.findMany({
+    where: {
+      status: { in: ['DUE', 'OVERDUE', 'PARTIALLY_PAID'] },
+      dueDate: { lte: now },
+      member: { customerId, group: { orgId, status: 'ACTIVE' } },
+    },
+    include: {
+      member: {
+        include: {
+          group: {
+            select: {
+              groupNumber: true,
+              startDate: true,
+              currentMonth: true,
+              totalSeats: true,
+              product: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (unpaidInstallments.length === 0) {
+    return { sent: 0, message: 'No overdue installments for this customer' };
+  }
+
+  const details = unpaidInstallments.map((inst) => {
+    const monthLabel = getMonthLabel(inst.member.group.startDate, inst.monthNumber);
+    return `• ${inst.member.group.product.name} (${inst.member.group.groupNumber}) ${monthLabel}: ₹${(Number(inst.balancePaise) / 100).toLocaleString('en-IN')}`;
+  }).join('\n');
+
+  const totalDue = unpaidInstallments.reduce((sum, inst) => sum + Number(inst.balancePaise), 0) / 100;
+
+  const body = [
+    `⚠️ Payment Overdue Reminder`,
+    `Dear ${customer.name},`,
+    `Total Due: ₹${totalDue.toLocaleString('en-IN')}`,
+    `Details:`,
+    details,
+    `Please pay at the earliest to avoid penalties.`,
+  ].join('\n');
+
+  const promises: Promise<unknown>[] = [];
+
+  promises.push(send({
+    recipientType: 'customer',
+    recipientId: customerId,
+    customerId,
+    channel: 'IN_APP',
+    title: '⚠️ Payment Overdue',
+    body,
+    data: { type: 'OVERDUE_REMINDER', totalDue, itemCount: unpaidInstallments.length },
+  }));
+
+  if (whatsapp.isConfigured()) {
+    promises.push(
+      whatsapp.sendText({ to: customer.phone, text: body }).catch(() => {}),
+    );
+  }
+
+  await Promise.allSettled(promises);
+  return { sent: 1, whatsappEnabled: whatsapp.isConfigured() };
+}
+
+/**
+ * Check if WhatsApp integration is enabled.
+ */
+export function isWhatsAppEnabled(): boolean {
+  return whatsapp.isConfigured();
 }

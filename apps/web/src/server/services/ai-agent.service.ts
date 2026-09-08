@@ -25,6 +25,8 @@ const MUTATION_ACTIONS = new Set([
   'update_group_status',
   'send_notification',
   'remind_unpaid',
+  'notify_all_overdue',
+  'notify_customer_overdue',
 ]);
 
 const ACTION_REGISTRY: Record<string, ActionHandler> = {
@@ -174,6 +176,14 @@ const ACTION_REGISTRY: Record<string, ActionHandler> = {
   remind_unpaid: async (params, ctx) => {
     return notificationService.remindUnpaidMembers(params.groupId, params.monthNumber, ctx.orgId);
   },
+
+  notify_all_overdue: async (_p, ctx) => {
+    return notificationService.notifyAllOverdue(ctx.orgId);
+  },
+
+  notify_customer_overdue: async (params, ctx) => {
+    return notificationService.notifyCustomerOverdue(params.customerId, ctx.orgId);
+  },
 };
 
 export function isMutationAction(action: string): boolean {
@@ -242,6 +252,8 @@ WRITE ACTIONS (needsConfirmation: true):
 - "update_group_status" — params: { "groupId": "id", "status": "OPEN|ACTIVE|COMPLETED|TERMINATED" }
 - "send_notification" — params: { "customerId": "id", "title": "text", "body": "text" } — Send notification to a customer
 - "remind_unpaid" — params: { "groupId": "id", "monthNumber": number } — Remind unpaid members for a specific month
+- "notify_all_overdue" — params: {} — Send overdue reminder to ALL members with pending payments (WhatsApp + In-App)
+- "notify_customer_overdue" — params: { "customerId": "id" } — Send overdue reminder to a specific customer
 
 SPECIAL ACTIONS:
 - "clarify" — params: {} — When you need more information from the user
@@ -258,24 +270,29 @@ RESPONSE FORMAT (STRICT JSON):
 
 IMPORTANT FOR responseText:
 - Keep responseText SHORT for voice (1-2 sentences summary). The detailed data is shown in tables on UI.
-- For "get_unpaid_members", say something like "Yeh rahi unpaid members ki list group-wise" and the UI will show full details.
-- For "get_pending_payments", say "Yeh hain pending verification wale payments" and the UI will show the table.
+- ALWAYS write Hindi in natural Devanagari-style romanization that sounds like a native Hindi speaker.
+- Use natural Hindi phrasing, NOT literal English translations. For example:
+  - Say "jama" instead of "collection", "baaki" instead of "pending", "sadasya" instead of "members"
+  - Say "kul" instead of "total", "samuh" instead of "group"
+- Avoid English words where Hindi alternatives exist. Use: "jankari" (information), "rashi" (amount), "bhugtan" (payment)
+- For "get_unpaid_members", say "Yeh rahi samuh ke hisaab se baaki bhugtan ki jaankari"
+- For "get_pending_payments", say "Yeh hain tasdeeq ke liye baaki bhugtan"
 
 EXAMPLES:
 User: "Kitne customers hain?"
-{"action":"get_dashboard_stats","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Dashboard stats la raha hoon..."}
+{"action":"get_dashboard_stats","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Dashboard ki jaankari la raha hoon, ek minute..."}
 
 User: "Pending list dikhao" or "Kiske payment nahi aaye?"
-{"action":"get_unpaid_members","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Yeh rahi group-wise unpaid members ki list."}
+{"action":"get_unpaid_members","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Yeh rahi samuh ke hisaab se baaki bhugtan ki jaankari."}
 
 User: "Pending payments dikhao" or "Verify karne wale payments"
-{"action":"get_pending_payments","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Yeh hain verification ke liye pending payments."}
+{"action":"get_pending_payments","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Yeh hain tasdeeq ke liye baaki bhugtan."}
 
 User: "Sab customers dikhao"
-{"action":"get_all_customers","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Yeh rahi sabhi customers ki list."}
+{"action":"get_all_customers","params":{},"needsConfirmation":false,"confirmed":false,"responseText":"Sabhi sadasyon ki jaankari la raha hoon."}
 
 User: "Active groups list karo"
-{"action":"list_groups","params":{"status":"ACTIVE"},"needsConfirmation":false,"confirmed":false,"responseText":"Active groups ki list la raha hoon."}`;
+{"action":"list_groups","params":{"status":"ACTIVE"},"needsConfirmation":false,"confirmed":false,"responseText":"Chalu samuhon ki jaankari la raha hoon."}`;
 }
 
 export function formatResultForSpeech(
@@ -293,7 +310,7 @@ export function formatResultForSpeech(
         const d = data as any;
         const collected = Number(d.collectedThisMonth || 0) / 100;
         if (isHindi) {
-          return `Dashboard: ${d.activeGroups} active groups hain, ${d.totalCustomers} customers hain, is mahine ka collection ₹${collected.toLocaleString('en-IN')} hai, ${d.pendingPayments} payments verify hone baaki hain, ${d.overdueInstallments} overdue installments hain.`;
+          return `Aapke paas ${d.activeGroups} chalu samuh hain, kul ${d.totalCustomers} sadasya hain. Is mahine ki jama rashi ${collected.toLocaleString('en-IN')} rupaye hai. ${d.pendingPayments} bhugtan tasdeeq ke liye baaki hain aur ${d.overdueInstallments} kiston mein deri ho chuki hai.`;
         }
         return `Dashboard: ${d.activeGroups} active groups, ${d.totalCustomers} customers, this month's collection is ₹${collected.toLocaleString('en-IN')}, ${d.pendingPayments} pending verifications, ${d.overdueInstallments} overdue installments.`;
       }
@@ -303,10 +320,10 @@ export function formatResultForSpeech(
         const d = data as any;
         const items = d.data || [];
         const count = d.meta?.total ?? items.length;
-        if (count === 0) return isHindi ? 'Koi customer nahi mila.' : 'No customers found.';
+        if (count === 0) return isHindi ? 'Koi sadasya nahi mila.' : 'No customers found.';
         const names = items.slice(0, 5).map((c: any) => c.name).join(', ');
-        const more = count > 5 ? (isHindi ? ` aur ${count - 5} aur` : ` and ${count - 5} more`) : '';
-        if (isHindi) return `${count} customers mile: ${names}${more}. Poori list neeche hai.`;
+        const more = count > 5 ? (isHindi ? ` aur ${count - 5} aur hain` : ` and ${count - 5} more`) : '';
+        if (isHindi) return `Kul ${count} sadasya mile. Jaise ki ${names}${more}. Poori jaankari neeche dikhayi gayi hai.`;
         return `Found ${count} customers: ${names}${more}. Full list is shown below.`;
       }
 
@@ -314,13 +331,13 @@ export function formatResultForSpeech(
         const d = data as any;
         const items = d.data || [];
         const count = d.meta?.total ?? items.length;
-        if (count === 0) return isHindi ? 'Koi payment verify hone ke liye nahi hai.' : 'No payments pending verification.';
+        if (count === 0) return isHindi ? 'Tasdeeq ke liye koi bhugtan baaki nahi hai.' : 'No payments pending verification.';
         const names = items.slice(0, 3).map((p: any) => {
           const name = p.installment?.member?.customer?.name || 'Unknown';
           const amt = Number(p.amountPaise) / 100;
-          return `${name} (₹${amt.toLocaleString('en-IN')})`;
-        }).join(', ');
-        if (isHindi) return `${count} payments verify hone ke liye pending hain. Jaise ${names}. Poori list neeche hai.`;
+          return `${name}, ${amt.toLocaleString('en-IN')} rupaye`;
+        }).join('. ');
+        if (isHindi) return `Kul ${count} bhugtan tasdeeq ke liye baaki hain. Jaise ${names}. Poori jaankari neeche hai.`;
         return `${count} payments pending verification. Including ${names}. Full list below.`;
       }
 
@@ -328,29 +345,29 @@ export function formatResultForSpeech(
         const d = data as any;
         const groups = d.groups || [];
         const totalUnpaid = groups.reduce((s: number, g: any) => s + g.unpaidMembers.length, 0);
-        if (totalUnpaid === 0) return isHindi ? 'Sabka payment aa chuka hai, koi pending nahi hai.' : 'All members have paid, no pending.';
+        if (totalUnpaid === 0) return isHindi ? 'Sabka bhugtan ho chuka hai, koi baaki nahi hai.' : 'All members have paid, no pending.';
         const summary = groups
           .filter((g: any) => g.unpaidMembers.length > 0)
           .slice(0, 3)
-          .map((g: any) => `${g.groupNumber} mein ${g.unpaidMembers.length} unpaid`)
+          .map((g: any) => `${g.groupNumber} mein ${g.unpaidMembers.length} sadasyon ka`)
           .join(', ');
-        if (isHindi) return `Total ${totalUnpaid} members ka payment pending hai. ${summary}. Poori detail neeche dikhaayi gayi hai.`;
+        if (isHindi) return `Kul ${totalUnpaid} sadasyon ka bhugtan baaki hai. ${summary}. Samuh ke hisaab se poori jaankari neeche dikhayi gayi hai.`;
         return `${totalUnpaid} members have unpaid installments. ${summary}. Full details shown below.`;
       }
 
       case 'get_pending_memberships': {
         const d = data as any[];
-        if (!d?.length) return isHindi ? 'Koi pending request nahi hai.' : 'No pending membership requests.';
+        if (!d?.length) return isHindi ? 'Koi sadasyta ki aarzi baaki nahi hai.' : 'No pending membership requests.';
         const names = d.slice(0, 5).map((m: any) => m.customer?.name || 'Unknown').join(', ');
-        if (isHindi) return `${d.length} pending membership requests hain: ${names}. Poori list neeche hai.`;
+        if (isHindi) return `${d.length} sadasyta ke aarziyan baaki hain. Jaise ki ${names}. Neeche poori jaankari hai.`;
         return `${d.length} pending membership requests: ${names}. Full list below.`;
       }
 
       case 'list_groups': {
         const d = data as any[];
-        if (!d?.length) return isHindi ? 'Koi group nahi mila.' : 'No groups found.';
-        const items = d.slice(0, 5).map((g: any) => `${g.groupNumber} (${g.status})`).join(', ');
-        if (isHindi) return `${d.length} groups mile: ${items}. Poori list neeche dikhaayi gayi hai.`;
+        if (!d?.length) return isHindi ? 'Koi samuh nahi mila.' : 'No groups found.';
+        const items = d.slice(0, 5).map((g: any) => g.groupNumber).join(', ');
+        if (isHindi) return `${d.length} samuh mile. Jaise ki ${items}. Poori jaankari neeche dikhayi gayi hai.`;
         return `${d.length} groups found: ${items}. Full list shown below.`;
       }
 

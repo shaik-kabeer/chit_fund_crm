@@ -313,7 +313,7 @@ export default function AIAgentPage() {
             <div className="text-center">
               <p className="text-lg font-medium text-gray-600">Click the mic or type a command</p>
               <div className="mt-3 flex flex-wrap gap-2 justify-center max-w-lg">
-                {['Kitne customers hain?', 'Unpaid list dikhao', 'Dashboard stats batao', 'Sab groups dikhao', 'Pending requests dikhao'].map((hint) => (
+                {['Kitne customers hain?', 'Unpaid list dikhao', 'Dashboard stats batao', 'Sab groups dikhao', 'Sabko overdue notice bhejo', 'Pending requests dikhao'].map((hint) => (
                   <button key={hint} onClick={() => doSend(hint)} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 rounded-full transition">
                     {hint}
                   </button>

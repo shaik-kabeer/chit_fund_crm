@@ -90,6 +90,13 @@ export default function CustomerDetailPage() {
     },
   });
 
+  const sendOverdueReminder = useMutation({
+    mutationFn: () => api.post('/notifications/notify-customer-overdue', { customerId: id }),
+    onSuccess: (data: any) => {
+      alert(data.message || 'Overdue reminder sent!');
+    },
+  });
+
   const markPaidMutation = useMutation({
     mutationFn: (payload: { installmentId: string; amountPaise: number; method: string; paymentDate: string; notes?: string }) =>
       api.post('/payments/mark-paid', payload),
@@ -124,6 +131,13 @@ export default function CustomerDetailPage() {
           <div className="flex gap-2 items-center">
             {canManage && (
               <>
+                <button
+                  onClick={() => sendOverdueReminder.mutate()}
+                  disabled={sendOverdueReminder.isPending}
+                  className="px-3 py-1 bg-red-50 border border-red-300 text-red-700 text-sm rounded-lg hover:bg-red-100 disabled:opacity-50"
+                >
+                  {sendOverdueReminder.isPending ? 'Sending...' : '⚠️ Send Overdue Reminder'}
+                </button>
                 <button
                   onClick={() => setNotifyOpen(!notifyOpen)}
                   className="px-3 py-1 bg-amber-50 border border-amber-300 text-amber-700 text-sm rounded-lg hover:bg-amber-100"

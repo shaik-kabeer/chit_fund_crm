@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Bar,
   BarChart,
@@ -65,6 +65,16 @@ export default function AdminDashboard() {
     queryFn: () => api.get<any>('/groups/stats'),
   });
 
+  const notifyAllOverdue = useMutation({
+    mutationFn: () => api.post('/notifications/notify-all-overdue', {}),
+    onSuccess: (data: any) => {
+      alert(data.message || 'Overdue reminders sent!');
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to send reminders');
+    },
+  });
+
   const { data: analytics, isLoading: analyticsLoading } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: () => api.get<any>('/analytics'),
@@ -109,6 +119,15 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-xl p-5 border">
           <p className="text-sm text-gray-500">Overdue Installments</p>
           <p className="text-3xl font-bold text-red-600 mt-1">{stats?.overdueInstallments || 0}</p>
+          {(stats?.overdueInstallments || 0) > 0 && (
+            <button
+              onClick={() => notifyAllOverdue.mutate()}
+              disabled={notifyAllOverdue.isPending}
+              className="mt-2 text-xs px-3 py-1 bg-red-50 border border-red-300 text-red-600 rounded-full hover:bg-red-100 disabled:opacity-50"
+            >
+              {notifyAllOverdue.isPending ? 'Sending...' : '⚠️ Notify All Overdue'}
+            </button>
+          )}
         </div>
         <div className="bg-white rounded-xl p-5 border">
           <p className="text-sm text-gray-500">Defaulting Members</p>
