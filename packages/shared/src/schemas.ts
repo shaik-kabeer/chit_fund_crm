@@ -107,17 +107,17 @@ export type UpdateGroupStatusInput = z.infer<typeof updateGroupStatusSchema>;
 
 export const createCustomerSchema = z.object({
   phone: z.string().min(10).max(15),
-  email: z.string().email().optional(),
+  email: z.string().email().optional().or(z.literal('')).transform((v) => v || undefined),
   password: z.string().min(8).optional(),
   name: z.string().min(2).max(255),
-  fatherName: z.string().max(255).optional(),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  pincode: z.string().regex(/^\d{6}$/).optional(),
-  branchId: z.string().uuid().optional(),
+  fatherName: z.string().max(255).optional().or(z.literal('')).transform((v) => v || undefined),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  address: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  city: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  state: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  pincode: z.string().regex(/^\d{6}$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  branchId: z.string().uuid().optional().or(z.literal('')).transform((v) => v || undefined),
 });
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
@@ -125,24 +125,24 @@ export const updateCustomerSchema = createCustomerSchema.partial().omit({ passwo
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 
 export const updateBankDetailsSchema = z.object({
-  bankName: z.string().min(2).max(100).optional(),
-  bankAccountNo: z.string().min(5).max(20).optional(),
-  bankIfsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Invalid IFSC format').optional(),
-  bankBranch: z.string().max(100).optional(),
-  upiId: z.string().max(100).optional(),
+  bankName: z.string().min(2).max(100).optional().or(z.literal('')).transform((v) => v || undefined),
+  bankAccountNo: z.string().min(5).max(20).optional().or(z.literal('')).transform((v) => v || undefined),
+  bankIfsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Invalid IFSC format').optional().or(z.literal('')).transform((v) => v || undefined),
+  bankBranch: z.string().max(100).optional().or(z.literal('')).transform((v) => v || undefined),
+  upiId: z.string().max(100).optional().or(z.literal('')).transform((v) => v || undefined),
 });
 export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;
 
 export const kycSubmitSchema = z.object({
-  name: z.string().optional(),
-  fatherName: z.string().optional(),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional(),
-  aadhaarLast4: z.string().regex(/^\d{4}$/).optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  pincode: z.string().optional(),
+  name: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  fatherName: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  pan: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  aadhaarLast4: z.string().regex(/^\d{4}$/).optional().or(z.literal('')).transform((v) => v || undefined),
+  address: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  city: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  state: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
+  pincode: z.string().optional().or(z.literal('')).transform((v) => v || undefined),
 });
 export type KycSubmitInput = z.infer<typeof kycSubmitSchema>;
 
